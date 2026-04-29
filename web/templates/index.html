@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCTS Tic Tac Toe</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>TicTacToe Bot</h1>
+    <section class="panel">
+      {% if game is none %}
+        <p class="status">Choose who moves first.</p>
+        <div class="board" aria-label="Empty tic tac toe board">
+          {% for _ in range(9) %}
+            <button class="cell" type="button" disabled></button>
+          {% endfor %}
+        </div>
+        <form class="choices" method="post" action="{{ url_for('new_game') }}">
+          <button name="first" value="human" type="submit">You first</button>
+          <button name="first" value="bot" type="submit">Bot first</button>
+        </form>
+      {% else %}
+        <p class="status">{{ game.message }}</p>
+        <p class="meta">You are O. Bot is X.</p>
+        {% if not game.done and game.current_player == 1 %}
+          <form id="bot-turn" method="post" action="{{ url_for('bot_turn') }}">
+            <input type="hidden" name="game_id" value="{{ game_id }}">
+          </form>
+          <script>
+            setTimeout(() => document.getElementById("bot-turn").submit(), 100);
+          </script>
+        {% endif %}
+        <form class="board" method="post" action="{{ url_for('move') }}">
+          <input type="hidden" name="game_id" value="{{ game_id }}">
+          {% for cell in cells %}
+            <button
+              class="cell"
+              name="action"
+              value="{{ cell.action }}"
+              {% if cell.disabled %}disabled{% endif %}
+              type="submit"
+            >{{ cell.symbol }}</button>
+          {% endfor %}
+        </form>
+        <p class="meta">Tree root visits: {{ game.mcts.observed_node.visits }}. Children: {{ game.mcts.observed_node.children|length }}.</p>
+        <div class="actions">
+          <a class="link-button" href="{{ url_for('index') }}">New game</a>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
