@@ -68,9 +68,8 @@ class MCTS:
         return None
 
     def player_to_move(self, state):
-        x_count = np.count_nonzero(state == 1)
-        o_count = np.count_nonzero(state == -1)
-        return 1 if x_count == o_count else -1
+        move_count = np.count_nonzero(state != 0)
+        return self.root_player if move_count % 2 == 0 else -self.root_player
 
     def selection(self, node):
         self.log("\nSelection")
@@ -207,34 +206,38 @@ def choose_mcts_action(board, num_simulations=1000, verbose=False):
 def play_against_mcts(num_simulations=200):
     env = TicTacToe()
     initial_state = env.reset()
+    current_player = choose_first_player()
     mcts = MCTS(
         num_simulations=num_simulations,
         verbose=False,
         initial_state=initial_state,
-        root_player=1,
+        root_player=current_player,
     )
     done = False
-    current_player = 1
     player_name = {1: "X", -1: "O", 0: "Draw"}
 
     print("You are O. MCTS is X.")
     print("Actions are 0-8, left to right, top to bottom.")
+    print(f"{'MCTS' if current_player == 1 else 'You'} move first.")
 
     while not done:
         env.render()
 
         if current_player == 1:
-            print("MCTS is thinking...")
+            print("Bot is thinking...")
             mcts.num_simulations = num_simulations
             mcts.run()
             action = mcts.best_action()
-            print(f"MCTS chose action {action}.")
+            print(f"Bot chose action {action}.")
         else:
             try:
                 action = int(input("Your turn (O). Enter action (0-8): "))
             except ValueError:
                 print("Invalid input! Enter a number from 0-8.")
                 continue
+            except EOFError:
+                print()
+                break
 
         state, reward, done, info = env.step(action, current_player)
 
@@ -243,7 +246,7 @@ def play_against_mcts(num_simulations=200):
             continue
 
         mcts.advance_to_state(state)
-        print(f"MCTS tree root visits: {mcts.observed_node.visits}, children: {len(mcts.observed_node.children)}")
+        print(f"Bot tree root visits: {mcts.observed_node.visits}, children: {len(mcts.observed_node.children)}")
 
         if done:
             env.render()
@@ -256,6 +259,15 @@ def play_against_mcts(num_simulations=200):
 
         current_player *= -1
 
+
+def choose_first_player():
+    while True:
+        choice = input("Who moves first? Enter 'me' for you (O), or 'bot' for Bot (X): ").strip().lower()
+        if choice in ("me", "you", "player", "human", "o"):
+            return -1
+        if choice in ("bot", "mcts", "x"):
+            return 1
+        print("Invalid choice. Type 'me' or 'bot'.")
 
 
 if __name__ == "__main__":
