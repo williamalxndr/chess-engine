@@ -5,19 +5,31 @@ from game import game_simulate, TicTacToe
 import numpy as np
 
 class MCTS:
-    def __init__(self, env=None, num_simulations=1000, verbose=False, initial_state=None, root_player=1):
+    def __init__(
+        self,
+        env=None,
+        num_simulations=1000,
+        verbose=False,
+        initial_state=None,
+        first_player=1,
+        ai_player=1,
+        root_player=None,
+    ):
         if env is None:
             env = TicTacToe()
+        if root_player is not None:
+            first_player = root_player
         self.env = env
         self.num_simulations = num_simulations
         self.verbose = verbose
         if initial_state is None:
             initial_state = self.env.reset()
         self.env.board = initial_state.copy()
-        self.env.turn = root_player
+        self.env.turn = first_player
         self.node = Node(state=initial_state.copy())
         self.observed_node = self.node  # Start with the root node as the observed node
-        self.root_player = root_player
+        self.first_player = first_player
+        self.ai_player = ai_player
 
     def player_name(self, player):
         return {1: "X", -1: "O", 0: "Draw", None: "None"}[player]
@@ -67,9 +79,32 @@ class MCTS:
             return 0
         return None
 
+    def score_winner(self, winner):
+        if winner == 0:
+            return 0
+        if winner == self.ai_player:
+            return 1
+        return -1
+
     def player_to_move(self, state):
         move_count = np.count_nonzero(state != 0)
-        return self.root_player if move_count % 2 == 0 else -self.root_player
+        return self.first_player if move_count % 2 == 0 else -self.first_player
+
+    def child_uct_score(self, node, child, player, exploration_constant=1.41):
+        if child.visits == 0:
+            return float("inf") if player == self.ai_player else float("-inf")
+
+        parent_visits = max(node.visits, 1)
+        exploration = exploration_constant * np.sqrt(np.log(parent_visits) / child.visits)
+        if player == self.ai_player:
+            return child.get_value() + exploration
+        return child.get_value() - exploration
+
+    def select_child(self, node):
+        player = self.player_to_move(node.state)
+        if player == self.ai_player:
+            return max(node.children, key=lambda child: self.child_uct_score(node, child, player))
+        return min(node.children, key=lambda child: self.child_uct_score(node, child, player))
 
     def selection(self, node):
         self.log("\nSelection")
@@ -91,10 +126,10 @@ class MCTS:
                 self.log(f"Found unexpanded action {action}.")
                 return node
             
-        # If all children are expanded, select the child with the highest UCT value, then select the unexpanded child of that node
-        best_child = node.best_child()
-        self.log("All actions expanded. Moving to best UCT child.")
-        self.log(f"Best UCT child: {best_child}")
+        # If all children are expanded, select adversarially based on whose turn it is.
+        best_child = self.select_child(node)
+        self.log("All actions expanded. Moving to selected UCT child.")
+        self.log(f"Selected UCT child: {best_child}")
         return self.selection(best_child) 
     
     def expansion(self, node):
@@ -116,7 +151,7 @@ class MCTS:
                     self.show_board(child.state)
                 return child
 
-        best_child = node.best_child()
+        best_child = self.select_child(node)
         self.log(f"No unexpanded actions. Reusing best child: {best_child}")
         return best_child
 
@@ -131,7 +166,7 @@ class MCTS:
             winner = self.winner(current_state)
             if winner is not None:
                 self.log(f"Rollout winner: {self.player_name(winner)}.")
-                return winner
+                return self.score_winner(winner)
 
             legal_actions = self.legal_actions(current_state)
             if not legal_actions:
@@ -144,14 +179,14 @@ class MCTS:
                 self.show_board(current_state)
             if done:
                 self.log(f"Rollout winner: {self.player_name(info['winner'])}.")
-                return info["winner"]  # Return the winner
+                return self.score_winner(info["winner"])
             current_player *= -1  # Switch player
             step_number += 1
 
     def backpropagation(self, node, reward):
         # Update the node's value and visit count, then propagate the reward up to the parent nodes
         self.log("\nBackpropagation")
-        self.log(f"Reward: {self.player_name(reward)}")
+        self.log(f"Reward score: {reward}")
         while node is not None:
             self.log(f"Before update: {node}")
             before_visits = node.visits
@@ -165,8 +200,14 @@ class MCTS:
             node = node.parent
 
     def best_action(self):
-        best_child = max(self.observed_node.children, key=lambda c: c.visits)  # Select the child with the most visits
+        if not self.observed_node.children:
+            return None
+
         player = self.player_to_move(self.observed_node.state)
+        if player != self.ai_player:
+            return None
+
+        best_child = max(self.observed_node.children, key=lambda c: (c.get_value(), c.visits))
         for action in self.legal_actions(self.observed_node.state):
             next_state, _, _, _ = game_simulate(self.observed_node.state, action, player=player)
             if np.array_equal(best_child.state, next_state):
@@ -178,7 +219,8 @@ class MCTS:
         self.log("Root board")
         if self.verbose:
             self.show_board(self.observed_node.state)
-            self.log(f"Root player: {self.player_name(self.root_player)}")
+            self.log(f"First player: {self.player_name(self.first_player)}")
+            self.log(f"AI player: {self.player_name(self.ai_player)}")
 
         for simulation_number in range(1, self.num_simulations + 1):
             self.log(f"\n========== Simulation {simulation_number} ==========")
@@ -193,7 +235,8 @@ def choose_mcts_action(board, num_simulations=1000, verbose=False):
         num_simulations=num_simulations,
         verbose=verbose,
         initial_state=board,
-        root_player=1,
+        first_player=1,
+        ai_player=1,
     )
     mcts.run()
     action = mcts.best_action()
@@ -211,7 +254,8 @@ def play_against_mcts(num_simulations=200):
         num_simulations=num_simulations,
         verbose=False,
         initial_state=initial_state,
-        root_player=current_player,
+        first_player=current_player,
+        ai_player=1,
     )
     done = False
     player_name = {1: "X", -1: "O", 0: "Draw"}
