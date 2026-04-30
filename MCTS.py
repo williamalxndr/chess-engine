@@ -1,7 +1,7 @@
 import sys
 
 from Node import Node
-from game import game_simulate, TicTacToe
+from game import TicTacToe
 import numpy as np
 
 class MCTS:
@@ -50,11 +50,13 @@ class MCTS:
     def legal_actions(self, state):
         return [i for i in range(9) if state[divmod(i, 3)] == 0]
 
+    def next_state(self, state, action, player):
+        next_state = state.copy()
+        next_state[divmod(action, 3)] = player
+        return next_state
+
     def find_child_for_state(self, node, state):
-        for child in node.children:
-            if np.array_equal(child.state, state):
-                return child
-        return None
+        return node.children_by_state.get(state.tobytes())
 
     def advance_to_state(self, state):
         next_node = self.find_child_for_state(self.observed_node, state)
@@ -121,7 +123,7 @@ class MCTS:
         # If not all children are expanded, expand one of the unexpanded children
         # If all children are expanded, select the child with the highest UCT value
         for action in self.legal_actions(node.state):
-            next_state, _, _, _ = game_simulate(node.state, action, player)
+            next_state = self.next_state(node.state, action, player)
             if self.find_child_for_state(node, next_state) is None:
                 self.log(f"Found unexpanded action {action}.")
                 return node
@@ -141,7 +143,7 @@ class MCTS:
 
         player = self.player_to_move(node.state)
         for action in self.legal_actions(node.state):
-            next_state, _, _, _ = game_simulate(node.state, action, player=player)
+            next_state = self.next_state(node.state, action, player)
             if self.find_child_for_state(node, next_state) is None:
                 child = Node(state=next_state, parent=node)
                 node.add_child(child)
@@ -173,13 +175,14 @@ class MCTS:
                 self.log("Rollout ended in a draw.")
                 return 0  # Draw
             action = np.random.choice(legal_actions)
-            current_state, _, done, info = game_simulate(current_state, action, current_player)
+            current_state = self.next_state(current_state, action, current_player)
             self.log(f"Rollout step {step_number}: player {self.player_name(current_player)} chose action {action}.")
             if self.verbose:
                 self.show_board(current_state)
-            if done:
-                self.log(f"Rollout winner: {self.player_name(info['winner'])}.")
-                return self.score_winner(info["winner"])
+            winner = self.winner(current_state)
+            if winner is not None:
+                self.log(f"Rollout winner: {self.player_name(winner)}.")
+                return self.score_winner(winner)
             current_player *= -1  # Switch player
             step_number += 1
 
@@ -209,7 +212,7 @@ class MCTS:
 
         best_child = max(self.observed_node.children, key=lambda c: (c.get_value(), c.visits))
         for action in self.legal_actions(self.observed_node.state):
-            next_state, _, _, _ = game_simulate(self.observed_node.state, action, player=player)
+            next_state = self.next_state(self.observed_node.state, action, player)
             if np.array_equal(best_child.state, next_state):
                 return action
         return None  

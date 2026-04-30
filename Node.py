@@ -9,9 +9,11 @@ class Node:
         self.visits = 0
         self.value = 0.0
         self.uct_value = 0.0
+        self.children_by_state = {}
 
     def add_child(self, child: "Node"):
         self.children.append(child)
+        self.children_by_state[child.state.tobytes()] = child
         
     def update(self, value):
         self.visits += 1
