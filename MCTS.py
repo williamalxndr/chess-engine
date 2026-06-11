@@ -1,7 +1,7 @@
 import sys
 
 from Node import Node
-from game import game_simulate, TicTacToe
+from env import game_simulate, TicTacToe
 import numpy as np
 import math
 
