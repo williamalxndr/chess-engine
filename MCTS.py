@@ -3,6 +3,7 @@ import sys
 from Node import Node
 from game import game_simulate, TicTacToe
 import numpy as np
+import math
 
 class MCTS:
     def __init__(self, env=None, num_simulations=1000, verbose=False, initial_state=None, root_player=1):
@@ -278,3 +279,39 @@ if __name__ == "__main__":
         mcts.run()
         best_action = mcts.best_action()
         print(f"Best action: {best_action}")
+
+class Node:
+    def __init__(self, state, parent=None):
+        self.state = state
+        self.parent = parent
+        self.children =[]
+        self.visits = 0
+        self.value = 0.0
+        self.uct_value = 0.0
+
+    def add_child(self, child: "Node"):
+        self.children.append(child)
+        
+    def update(self, value):
+        self.visits += 1
+        self.value += value
+
+    def get_value(self):
+        if self.visits == 0:
+            return 0
+        return self.value / self.visits
+    
+    def uct(self, exploration_constant=1.41):
+        if self.visits == 0:
+            return float('inf')
+        self.uct_value = self.get_value() + exploration_constant * (math.sqrt(np.log(self.parent.visits) / self.visits))
+        return self.uct_value
+    
+    def best_child(self, exploration_constant=1.41):
+        for child in self.children:
+            child.uct_value = child.uct(exploration_constant)
+
+        return max(self.children, key=lambda c: c.uct_value)
+    
+    def __repr__(self):
+        return f"Node(state={self.state}, visits={self.visits}, value={self.value}, uct_value={self.uct_value})"
