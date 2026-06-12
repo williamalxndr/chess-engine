@@ -5,69 +5,206 @@ import numpy as np
 
 class TicTacToe(gym.Env):
     def __init__(self):
+        """
+        Initialize the environment with an empty board.
+        X always moves first.
+
+        Attributes:
+            board (np.ndarray): 3x3 game state (-1: X, 1: O, 0 = empty).
+            observation_space (gym.spaces.Box): board value range.
+            action_space (gym.spaces.Discrete): 9 possible cell indices.
+            turn (int): player allowed to move next (-1 or 1).
+        """
         self.board = np.zeros((3, 3), dtype=int)
         self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(3, 3), dtype=int)
         self.action_space = gym.spaces.Discrete(9)
-        self.turn = np.random.choice([1, -1])  # Randomly choose which player starts
+        self.reset()
 
-    def reset(self):
-        self.board = np.zeros((3, 3), dtype=int)
-        self.turn = np.random.choice([1, -1])  # Randomly choose which player starts
-        return self.board.copy()
+    def reset(self, board=None):
+        """
+        Reset the board to empty and choose the starting player.
+
+        Args:
+            starting_player: player who moves first 
+                If None, chosen randomly.
+
+        Returns:
+            np.ndarray: a copy of the empty board.
+        """
+        if board is None:
+            self.board = np.zeros((3, 3), dtype=int)
+        else:
+            self.board = board
+
+        self.turn = -1  # X always moves first
+ 
+        return self.board
+        
     
     def step(self, action, player):
-        self.turn = player
+        """
+        Make a move for player.
+        Args: 
+            action: board index to be filled by player
+            player: the player who moves
 
-        row, col = divmod(action, 3)
+        Returns:
+            observation (np.ndarray): game state after player makes a move
+            reward (int): 1 if win, 0 if the game continues
+            terminated (bool): True if the game is over, False if the game still continues
+            info (dict): "winner" (player / 0 /None) 
 
-        if action not in self._legal_actions():
-            return self.board, -1, False, {"error": "Invalid action! Choose an empty cell from 0-8."}
+        Raises:
+            ValueError: if it is not player's turn, or the action is illegal
+        """
+        # Player turn validation
+        if self.turn != player:
+            raise ValueError("It's not your turn!")
+
+        # Action validation
+        if action not in self.get_legal_actions_self():
+            raise ValueError("Action is illegal!")
         
-        self.board[row, col] = player  # Player's move
+        self.board = self.transition_state(self.board, action, player)  # Player's move (fill the empty cell with player's mark)
 
-        if self.check_winner(player):
-            return self.board, player, True, {"winner": player}  # Player wins
+        if self.check_winner_self(player):
+            return self.board, 1, True, {"winner": player}  # Player wins
 
-        if self.check_draw():
-            return self.board, 0, True, {"winner": 0}  # Draw
+        if self.check_draw_self():
+            return self.board, 0, True, {"winner": "Draw"}  # Draw
         
         self.turn *= -1  # Switch player
         return self.board, 0, False, {"winner": None}  # Game continues
     
-    def check_winner(self, player):
-        for i in range(3):
-            if np.all(self.board[i, :] == player) or np.all(self.board[:, i] == player):
-                return True
-        if np.all(np.diag(self.board) == player) or np.all(np.diag(np.fliplr(self.board)) == player):
-            return True
-        return False
+    def get_state(self):
+        return self.board
     
-    def check_draw(self):
-        return np.all(self.board != 0)
+    def check_winner_self(self, player):
+        """
+        Check whether player is winning
+
+        Args:
+            player: player to check (-1 or 1)
+        Returns:
+            bool: True if player occupies a full row, column or diagonal
+
+        """
+        return self.check_winner(self.board, player)
     
-    def _legal_actions(self):
-        return [i for i in range(9) if self.board[divmod(i, 3)] == 0]
+    def check_draw_self(self):
+        """
+        Return True if the board is full. Assumes no winner has been found.
+
+        Returns:
+            bool: True if draw, False if the game still running
+        """
+        return self.check_draw(self.state)
+    
+    def get_legal_actions_self(self):
+        """
+        Returns indices of empty cells (the legal moves).
+        
+        Returns:
+            list[int]: cell indices 0-8 that are unoccupied
+        """
+        return self.get_legal_action(self.board)
     
     def render(self):
-        symbols = {0: ' ', 1: 'X', -1: 'O'}
+        """
+        Prints the board
+        """
+        symbols = {0: ' ', 1: 'O', -1: 'X'}
         for row in self.board:
             print(' | '.join(symbols[cell] for cell in row))
             print('-' * 9)
+
     
+    @staticmethod
+    def random_simulate(board):
+        """
+        Randomly simulate a game for board
 
-# Helper function
-def game_simulate(state, action, player):
-    env = TicTacToe()
-    env.board = state.copy()
-    return env.step(action, player)
+        Args:
+            board(np.ndarray): The board to be simulated/rollout
 
-def check_win(board, player):
-    for i in range(3):
-        if np.all(board[i, :] == player) or np.all(board[:, i] == player):
+        Returns:
+            player(int): -1 if X wins, 0 if draw, 1 if O wins 
+        """
+        board_copy = board.copy()
+        player = TicTacToe.get_whose_turn(board_copy)
+        legal_action = TicTacToe.get_legal_action(board_copy)
+        random_action = np.random.choice(legal_action)
+
+        terminate = False
+
+        while not terminate:
+            board_copy = TicTacToe.transition_state(board_copy, random_action, player)
+            win = TicTacToe.check_winner(board_copy, player)
+            draw = TicTacToe.check_draw(board_copy)
+            terminate = win or draw
+
+            random_action_idx = np.argwhere(legal_action==random_action)
+            legal_action = np.delete(legal_action, random_action_idx)
+            if not terminate:
+                player *= -1
+                random_action = np.random.choice(legal_action)
+
+
+
+        reward = 1 if win else 0
+
+        return player * reward
+        
+
+    @staticmethod
+    def get_whose_turn(board):
+        unique, counts = np.unique(board, return_counts=True)
+        dict_unique = dict(zip(unique, counts))
+        x = dict_unique.get(-1, 0)
+        o = dict_unique.get(1, 0)
+
+        if o == x:
+            return -1       # X turn, (1)
+        elif o+1 == x:
+            return 1        # O turn, (-1)
+        else:
+            raise ValueError("Board is illegal!")
+        
+    @staticmethod
+    def get_legal_action(board):
+        return [i for i in range(9) if board[divmod(i, 3)] == 0]
+
+    @staticmethod
+    def transition_state(board: np.ndarray, action, turn):
+        board_copy = board.copy()
+        row, col = divmod(action, 3)
+        board_copy[row][col] = turn
+        return board_copy
+
+    @staticmethod
+    def check_winner(board, player):
+        for i in range(3):
+            if np.all(board[i, :] == player) or np.all(board[:, i] == player):
+                return True
+        if np.all(np.diag(board) == player) or np.all(np.diag(np.fliplr(board)) == player):
             return True
-    if np.all(np.diag(board) == player) or np.all(np.diag(np.fliplr(board)) == player):
-        return True
-    return False
+        return False
+
+
+    @staticmethod
+    def check_draw(board):
+        return np.all(board) and \
+            not TicTacToe.check_winner(board, -1) and \
+            not TicTacToe.check_winner(board, 1)
+    
+    @staticmethod
+    def check_terminate(board, player):
+        if TicTacToe.check_winner(board, player):
+            return 1
+        if TicTacToe.check_draw(board):
+            return 0
+        
+        
 
 
 if __name__ == "__main__":
@@ -90,7 +227,7 @@ if __name__ == "__main__":
             print(info["error"])
             continue
 
-        if reward == current_player:
+        if reward == 1:
             env.render()
             print(f"Player {player_name[current_player]} wins!")
         elif reward == 0 and done:
