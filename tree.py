@@ -1,15 +1,36 @@
 from env import TicTacToe
+from network import PolicyValueNetwork
+
 import numpy as np
 import math
 import copy
+from abc import ABC, abstractmethod
 
-class MonteCarloTreeSearch:
-    def __init__(self, env: TicTacToe, exploration_constant=1.41, epochs=1000):
+class BaseMCTS(ABC):
+    def __init__(self, env, epochs=1000):
         self.env = env
-        self.exploration_constant = exploration_constant
         self.epochs = epochs
         self.root = Node(env.get_state())
         self.observed = self.root
+
+    def score(self, node: "Node"):
+        """
+        Scoring a node for selection process
+        """
+        return self.q(node) + self.u(node)   # mean value + exploration
+    
+    def q(self, node: "Node"):
+        return node.q()
+    
+    @abstractmethod
+    def u(self, node):
+        return NotImplemented 
+    
+    def best_child(self, node: "Node"):
+        """
+        Determining the best child to descend to based on the scoring method
+        """
+        return max(node.children, key=lambda ch: self.score(ch))
 
     def select(self):
         """
@@ -19,10 +40,11 @@ class MonteCarloTreeSearch:
         """
         selected_node = self.observed
         while selected_node.is_fully_expanded() and not selected_node.leaf:
-            selected_node = selected_node.best_child()
+            selected_node = self.best_child(selected_node)
         
         return selected_node
     
+    @abstractmethod
     def expand(self, selected_node: "Node"):
         """
         Expand the selected node with an untried action
@@ -33,6 +55,69 @@ class MonteCarloTreeSearch:
         Returns:
             expanded_node (Node): The node that has not yet been expanded (action that hasn't tried)
         """
+        return NotImplemented
+
+    @abstractmethod
+    def evaluate(self, node: "Node"):
+        """
+        Simulate the game from expanded node (Rollout)
+
+        Args:
+            expanded_node (Node): The node that wants to get simulated
+
+        Returns:
+            value: 1 if win, -1 if lose, 0 if draw
+        """
+        return NotImplemented
+    
+    def backpropagate(self, node: "Node", reward):
+        """
+        Update the value of the node after simulation.
+        
+        Args:
+            reward: Reward after the simulation step.
+        """
+        back = node
+
+        while back is not None:
+            back.update(reward)
+            back = back.parent
+
+    def search(self):
+        for epoch in range(1, self.epochs + 1):
+            selected_node = self.select()                        # Selection
+            expanded_node = self.expand(selected_node)           # Expansion
+            reward = self.evaluate(expanded_node)                # Simulation
+            self.backpropagate(expanded_node, reward)            # Backpropagation
+        
+        return self.get_best_action()
+    
+    def get_best_action(self):
+        best_child = max(self.observed.children, key=lambda child: child._n_visits) 
+        best_action = best_child.action
+        return best_action
+
+    def advance(self, action):
+        for child in self.observed.children:
+            if child.action == action:
+                self.observed = child
+                return
+        raise ValueError("No child with that action")
+            
+
+class VanillaMCTS(BaseMCTS):
+    def __init__(self, env, epochs=1000, exploration_constant=1.41):
+        super().__init__(env, epochs)
+        self.exploration_constant=1.41
+
+
+    def u(self, node: "Node"):
+        if node._n_visits == 0:
+            return float('inf')
+        uct_value = node.q() + self.exploration_constant * (math.sqrt(np.log(node.parent._n_visits) / node._n_visits))
+        return uct_value
+
+    def expand(self, selected_node: "Node"):
         if selected_node.leaf:
             expanded_node = selected_node
         
@@ -46,16 +131,7 @@ class MonteCarloTreeSearch:
 
         return expanded_node
 
-    def rollout(self, expanded_node: "Node"):
-        """
-        Simulate the game from expanded node
-
-        Args:
-            expanded_node (Node): The node that wants to get simulated
-
-        Returns:
-            value: 1 if win, -1 if lose, 0 if draw
-        """
+    def evaluate(self, expanded_node: "Node"):
         if expanded_node.leaf:
             reward = expanded_node.winner
         else:
@@ -63,47 +139,55 @@ class MonteCarloTreeSearch:
 
         return reward
 
-    def backpropagate(self, expanded_node, reward):
-        """
-        Update the value of the node after simulation.
-        
-        Args:
-            reward: Reward after the simulation step.
-        """
-        back = expanded_node
-        
 
-        while back is not None:
-            back.update(reward)
-            back = back.parent
-        
-    def search(self):
-        """
-        Run the MCTS algorithm
-        Returns:
-            action(int): the best action after running the MCTS algorithm
-        """
-        for epoch in range(1, self.epochs + 1):
-            selected_node = self.select()                        # Selection
-            expanded_node = self.expand(selected_node)           # Expansion
-            reward = self.rollout(expanded_node)                 # Simulation
-            self.backpropagate(expanded_node, reward)             # Backpropagation
-        
-        return self.get_best_action()
+class NetworkMCTS(BaseMCTS):
+    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41):
+        super().__init__(env, epochs)
+        self.network = network
+        self.c_puct = c_puct
 
-        
-    def get_best_action(self):
-        best_child = max(self.observed.children, key=lambda child: child._value/child._n_visits)  # Greedy, not using UCT value
-        best_action = best_child.action
-        return best_action
-
-    def advance(self, action):
-        for child in self.observed.children:
-            if child.action == action:
-                self.observed = child
-                return
-        raise ValueError("No child with that action")
+    def u(self, node: "Node"):
+        return self.c_puct * self.p(node) * math.sqrt(node.parent._n_visits) / (1 + node._n_visits)
     
+    def p(self, node: "Node"):
+        return max(node.children, key=lambda child:child.prior)
+
+    def expand(self, selected_node: "Node"):
+        if selected_node.leaf:
+            expanded_node = selected_node
+        
+        else:
+            turn = self.turn
+            # For network MCTS, expand all first
+            while untried_action:
+                untried_action = selected_node.untried_actions.pop()
+                expanded_state = TicTacToe.transition_state(selected_node.state, untried_action, turn)
+                expanded_node = Node(expanded_state, selected_node, untried_action)
+
+                selected_node.add_child(expanded_node)
+
+        return expanded_node
+
+    def evaluate(self, selected_node: "Node"):
+        state = selected_node.state
+        policy_head, value_head = self.network(state)
+
+        children = selected_node.children
+        legal_actions = TicTacToe.get_legal_action(state)
+
+        mask = np.ones(len(policy_head), dtype=bool)
+        mask[legal_actions] = False
+        policy_head[mask] = 0
+
+        policy_head /= policy_head.sum()
+
+        for child in children:
+            a = child.action
+            child.prior = policy_head[a]
+
+        return value_head
+
+        
 
 class Node:
     """
@@ -130,7 +214,7 @@ class Node:
         self.children = []
         self._n_visits = 0
         self._value = 0.0
-        self._uct_value = self.uct_score()
+        self.prior = 0.0
         self.turn = TicTacToe.get_whose_turn(self.state)
         self.leaf = TicTacToe.is_terminal(self.state)
         if self.leaf:
@@ -173,41 +257,7 @@ class Node:
         if self._n_visits == 0:
             return 0
         return self._value / self._n_visits
-    
-    def uct_score(self, exploration_constant=1.41):
-        """
-        Compute this node's UCB1 score for selection.
-
-        Balances exploitation (mean value) against exploration
-        (parent visits vs. own visits). Unvisited nodes return
-        infinity so they are always selected first.
-
-        Args:
-            exploration_constant: weight of the exploration term (default=sqrt(2)).
-
-        Returns:
-            float: the UCT score, or inf if this node has no visits.
-        """
-
-        if self._n_visits == 0:
-            return float('inf')
-        self._uct_value = self.q() + exploration_constant * (math.sqrt(np.log(self.parent._n_visits) / self._n_visits))
-        return self._uct_value
-    
-    def best_child(self, exploration_constant=1.41):
-        """Return the child with the highest UCT score.
-
-        Args:
-            exploration_constant: passed through to each child's uct().
-
-        Returns:
-            Node: the most promising child to descend into.
-        """
-        for child in self.children:
-            child._uct_value = child.uct_score(exploration_constant)
-
-        return max(self.children, key=lambda c: c._uct_value)
-        
+                
     def __repr__(self):
         return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value}, uct_value={self._uct_value})"
     
@@ -224,7 +274,7 @@ class Node:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    agent=MonteCarloTreeSearch(env, epochs=10)
+    agent=VanillaMCTS(env, epochs=10)
     best_action = agent.search()
     print(best_action)
 
