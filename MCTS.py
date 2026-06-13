@@ -6,10 +6,10 @@ import math
 import copy
 
 class MonteCarloTreeSearch:
-    def __init__(self, env: TicTacToe, exploration_constant=1.41, num_simulations=1000):
+    def __init__(self, env: TicTacToe, exploration_constant=1.41, epochs=1000):
         self.env = env
         self.exploration_constant = exploration_constant
-        self.num_simulations = num_simulations
+        self.epochs = epochs
         self.root = Node(env.get_state())
         self.observed = self.root
         self.turn = env.turn
@@ -68,22 +68,27 @@ class MonteCarloTreeSearch:
         return TicTacToe.random_simulate(expanded_node.state)
 
 
-    def backpropagation(self, selected_node, reward):
+    def backpropagation(self, expanded_node, reward):
         """
         Update the value of the node after simulation.
         
         Args:
             reward: Reward after the simulation step.
         """
-        selected_node.update(reward)
+        back = expanded_node
+        while back is not None:
+            back.update(reward)
+            back = back.parent
         
 
     def run(self):
-        for _ in range(1, self.num_simulations + 1):
+        for epoch in range(1, self.epochs + 1):
             selected_node = self.selection()                        # Selection
             expanded_node = self.expansion(selected_node)           # Expansion
-            reward = self.simulation(expanded_node)               # Simulation
-            self.backpropagation(selected_node, reward)                          # Backpropagation
+            reward = self.simulation(expanded_node)                 # Simulation
+            self.backpropagation(selected_node, reward)             # Backpropagation
+            print(f"Epoch {epoch}: {self.root}")
+
 
 
 class Node:
@@ -118,14 +123,20 @@ class Node:
         Append child to this node's children.
         """
         self.children.append(child)
-        
+
+    def increment_visit(self):
+        """
+        Increment the n visit by one
+        """
+        self._n_visits += 1
+
     def update(self, value):
         """
         Record one visit and add value to the cumulative reward.
         Args:
             value: reward to backpropagate into this node.
          """
-        self._n_visits += 1
+        self.increment_visit()
         self._value += value
 
     def untried_actions(self):
@@ -198,7 +209,8 @@ class Node:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    agent=MonteCarloTreeSearch(env, num_simulations=50)
+    agent=MonteCarloTreeSearch(env, epochs=1000)
     agent.run()
 
-    print(f"root.children: {agent.root.children}")
+    for child in agent.root.children:
+        print(f"State: {child.state}, value: {child._value}, n_visit: {child._n_visits}, uct: {child._uct_value}")
