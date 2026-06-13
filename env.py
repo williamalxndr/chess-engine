@@ -132,6 +132,11 @@ class TicTacToe(gym.Env):
         """
         board_copy = board.copy()
         player = TicTacToe.get_whose_turn(board_copy)
+        
+        # Check if already terminates:
+        if TicTacToe.check_winner(board_copy, player):
+            return player
+
         legal_action = TicTacToe.get_legal_action(board_copy)
         random_action = np.random.choice(legal_action)
 

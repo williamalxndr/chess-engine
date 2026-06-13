@@ -12,7 +12,6 @@ class MonteCarloTreeSearch:
         self.epochs = epochs
         self.root = Node(env.get_state())
         self.observed = self.root
-        self.turn = env.turn
 
     def selection(self):
         """
@@ -46,14 +45,18 @@ class MonteCarloTreeSearch:
         Returns:
             expanded_node (Node): The node that has not yet been expanded (action that hasn't tried)
         """
-        untried_action = selected_node.untried_actions.pop()
-        turn = TicTacToe.get_whose_turn(selected_node.state)
-        child_state = TicTacToe.transition_state(selected_node.state, untried_action, turn)
-        child_node = Node(child_state, selected_node)
+        if selected_node.leaf:
+            expanded_node = selected_node
+        
+        else:
+            untried_action = selected_node.untried_actions.pop()
+            turn = TicTacToe.get_whose_turn(selected_node.state)
+            child_state = TicTacToe.transition_state(selected_node.state, untried_action, turn)
+            expanded_node = Node(child_state, selected_node)
 
-        selected_node.add_child(child_node)
+            selected_node.add_child(expanded_node)
 
-        return child_node
+        return expanded_node
 
     def simulation(self, expanded_node: "Node"):
         """
@@ -65,8 +68,12 @@ class MonteCarloTreeSearch:
         Returns:
             value: 1 if win, -1 if lose, 0 if draw
         """
-        return TicTacToe.random_simulate(expanded_node.state)
+        if expanded_node.leaf:
+            reward = expanded_node.turn
+        else:
+            reward = TicTacToe.random_simulate(expanded_node.state)
 
+        return reward
 
     def backpropagation(self, expanded_node, reward):
         """
@@ -80,14 +87,13 @@ class MonteCarloTreeSearch:
             back.update(reward)
             back = back.parent
         
-
     def run(self):
         for epoch in range(1, self.epochs + 1):
             selected_node = self.selection()                        # Selection
             expanded_node = self.expansion(selected_node)           # Expansion
             reward = self.simulation(expanded_node)                 # Simulation
             self.backpropagation(selected_node, reward)             # Backpropagation
-            print(f"Epoch {epoch}: {self.root}")
+            print(f"Epoch {epoch}: {selected_node}")
 
 
 
@@ -116,6 +122,8 @@ class Node:
         self._n_visits = 0
         self._value = 0.0
         self._uct_value = self._uct()
+        self.turn()
+        self.leaf()
         self.untried_actions()
 
     def add_child(self, child: "Node"):
@@ -192,8 +200,20 @@ class Node:
 
         return max(self.children, key=lambda c: c._uct_value)
     
+    def turn(self):
+        """
+        Check whose turn is it in the current board/state
+        """
+        self.turn = TicTacToe.get_whose_turn(self.state)
+    
+    def leaf(self):
+        """
+        Check if the node is winning/draw or not
+        """
+        self.leaf = TicTacToe.check_draw(self.state) or TicTacToe.check_winner(self.state, self.turn * -1)
+    
     def __repr__(self):
-        return f"Node(state={self.state}, visits={self._n_visits}, value={self._value}, uct_value={self._uct_value})"
+        return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value}, uct_value={self._uct_value})"
     
     def __copy__(self):
         """Implements copy.copy() behavior."""
@@ -203,13 +223,19 @@ class Node:
     def copy(self):
         """Exposes a traditional .copy() method directly on the instance."""
         return copy.copy(self)
+    
+    def visualize_tree(self):
+        """
+        Visualize the tree
+        """
+        
 
 
 
 
 if __name__ == "__main__":
     env = TicTacToe()
-    agent=MonteCarloTreeSearch(env, epochs=1000)
+    agent=MonteCarloTreeSearch(env, epochs=2000)
     agent.run()
 
     for child in agent.root.children:
