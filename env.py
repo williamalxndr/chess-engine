@@ -120,7 +120,7 @@ class TicTacToe(gym.Env):
 
     
     @staticmethod
-    def random_simulate(board):
+    def rollout(board):
         """
         Randomly simulate a game for board
 
@@ -198,17 +198,22 @@ class TicTacToe(gym.Env):
 
     @staticmethod
     def check_draw(board):
-        return np.all(board) and \
-            not TicTacToe.check_winner(board, -1) and \
-            not TicTacToe.check_winner(board, 1)
+        return np.all(board)
     
     @staticmethod
-    def check_terminate(board, player):
-        if TicTacToe.check_winner(board, player):
+    def is_terminal(board):
+        draw = np.all(board)
+        win = TicTacToe.check_winner(board, -1) or TicTacToe.check_winner(board, 1)
+        return win or draw
+    
+    @staticmethod
+    def get_winner(board):
+        if TicTacToe.check_winner(board, -1):
+            return -1
+        elif TicTacToe.check_winner(board, 1):
             return 1
-        if TicTacToe.check_draw(board):
+        elif TicTacToe.check_draw(board):
             return 0
-        
         
 
 

@@ -1,5 +1,3 @@
-import sys
-
 from env import TicTacToe
 import numpy as np
 import math
@@ -13,29 +11,19 @@ class MonteCarloTreeSearch:
         self.root = Node(env.get_state())
         self.observed = self.root
 
-    def selection(self):
+    def select(self):
         """
         Select the best child, if no child are already expanded
         Returns:
             Node: the best child node to be expanded
         """
-        curr = self.observed
-        # print(curr)
-        # print(f"untried actions: {curr.untried_actions}")
-        # print(f"condition len(curr.untried_actions) == 0 = {len(curr.untried_actions) == 0}")
-        # print(f"\n\nCHILDREN ({len(curr.children)}):")
-        # print([ch.state for ch in curr.children])
-        # print("\n\n")
-        # print("=======================")
-
-        # print(f"OLD CURR: {curr}")
-        while len(curr.untried_actions) == 0:
-            curr = curr.best_child()
-        # print(f"NEW CURR: {curr}")
-
-        return curr
+        selected_node = self.observed
+        while selected_node.is_fully_expanded() and not selected_node.leaf:
+            selected_node = selected_node.best_child()
+        
+        return selected_node
     
-    def expansion(self, selected_node: "Node"):
+    def expand(self, selected_node: "Node"):
         """
         Expand the selected node with an untried action
 
@@ -50,15 +38,15 @@ class MonteCarloTreeSearch:
         
         else:
             untried_action = selected_node.untried_actions.pop()
-            turn = TicTacToe.get_whose_turn(selected_node.state)
+            turn = selected_node.turn
             child_state = TicTacToe.transition_state(selected_node.state, untried_action, turn)
-            expanded_node = Node(child_state, selected_node)
+            expanded_node = Node(child_state, selected_node, untried_action)
 
             selected_node.add_child(expanded_node)
 
         return expanded_node
 
-    def simulation(self, expanded_node: "Node"):
+    def rollout(self, expanded_node: "Node"):
         """
         Simulate the game from expanded node
 
@@ -69,13 +57,13 @@ class MonteCarloTreeSearch:
             value: 1 if win, -1 if lose, 0 if draw
         """
         if expanded_node.leaf:
-            reward = expanded_node.turn
+            reward = expanded_node.winner
         else:
-            reward = TicTacToe.random_simulate(expanded_node.state)
+            reward = TicTacToe.rollout(expanded_node.state)
 
         return reward
 
-    def backpropagation(self, expanded_node, reward):
+    def backpropagate(self, expanded_node, reward):
         """
         Update the value of the node after simulation.
         
@@ -83,19 +71,39 @@ class MonteCarloTreeSearch:
             reward: Reward after the simulation step.
         """
         back = expanded_node
+        
+
         while back is not None:
             back.update(reward)
             back = back.parent
         
-    def run(self):
+    def search(self):
+        """
+        Run the MCTS algorithm
+        Returns:
+            action(int): the best action after running the MCTS algorithm
+        """
         for epoch in range(1, self.epochs + 1):
-            selected_node = self.selection()                        # Selection
-            expanded_node = self.expansion(selected_node)           # Expansion
-            reward = self.simulation(expanded_node)                 # Simulation
-            self.backpropagation(selected_node, reward)             # Backpropagation
-            print(f"Epoch {epoch}: {selected_node}")
+            selected_node = self.select()                        # Selection
+            expanded_node = self.expand(selected_node)           # Expansion
+            reward = self.rollout(expanded_node)                 # Simulation
+            self.backpropagate(expanded_node, reward)             # Backpropagation
+        
+        return self.get_best_action()
 
+        
+    def get_best_action(self):
+        best_child = max(self.observed.children, key=lambda child: child._value/child._n_visits)  # Greedy, not using UCT value
+        best_action = best_child.action
+        return best_action
 
+    def advance(self, action):
+        for child in self.observed.children:
+            if child.action == action:
+                self.observed = child
+                return
+        raise ValueError("No child with that action")
+    
 
 class Node:
     """
@@ -112,25 +120,31 @@ class Node:
         uct_value (float): last computed UCT score (for selection).
     """
 
-    def __init__(self, state, parent=None):
+    def __init__(self, state, parent=None, action=None):
         """
         Create a node for state, optionally linked to parent.
         """
         self.state = state
         self.parent = parent
+        self.action = action
         self.children = []
         self._n_visits = 0
         self._value = 0.0
-        self._uct_value = self._uct()
-        self.turn()
-        self.leaf()
-        self.untried_actions()
+        self._uct_value = self.uct_score()
+        self.turn = TicTacToe.get_whose_turn(self.state)
+        self.leaf = TicTacToe.is_terminal(self.state)
+        if self.leaf:
+            self.winner = TicTacToe.get_winner(self.state)
+        self.untried_actions = TicTacToe.get_legal_action(self.state)
 
     def add_child(self, child: "Node"):
         """
         Append child to this node's children.
         """
         self.children.append(child)
+
+    def is_fully_expanded(self):
+        return len(self.untried_actions) == 0
 
     def increment_visit(self):
         """
@@ -140,21 +154,15 @@ class Node:
 
     def update(self, value):
         """
-        Record one visit and add value to the cumulative reward.
+        Record one visit and add value to the cumulative resward.
         Args:
-            value: reward to backpropagate into this node.
+            value: reward to backpropagate into this node. (-1 if X wins, 1 if O wins, 0 if draw)
          """
         self.increment_visit()
+        value *= -self.turn      # Value is seen from parent's point of view
         self._value += value
 
-    def untried_actions(self):
-        """
-        Update the untried action that is not already expanded. 
-        """
-        self.untried_actions = TicTacToe.get_legal_action(self.state)
-
-
-    def _get_value(self):
+    def q(self):
         """
         Return the mean value (value / visits), or 0 if never visited.
 
@@ -166,7 +174,7 @@ class Node:
             return 0
         return self._value / self._n_visits
     
-    def _uct(self, exploration_constant=1.41):
+    def uct_score(self, exploration_constant=1.41):
         """
         Compute this node's UCB1 score for selection.
 
@@ -183,7 +191,7 @@ class Node:
 
         if self._n_visits == 0:
             return float('inf')
-        self._uct_value = self._get_value() + exploration_constant * (math.sqrt(np.log(self.parent._n_visits) / self._n_visits))
+        self._uct_value = self.q() + exploration_constant * (math.sqrt(np.log(self.parent._n_visits) / self._n_visits))
         return self._uct_value
     
     def best_child(self, exploration_constant=1.41):
@@ -196,22 +204,10 @@ class Node:
             Node: the most promising child to descend into.
         """
         for child in self.children:
-            child._uct_value = child._uct(exploration_constant)
+            child._uct_value = child.uct_score(exploration_constant)
 
         return max(self.children, key=lambda c: c._uct_value)
-    
-    def turn(self):
-        """
-        Check whose turn is it in the current board/state
-        """
-        self.turn = TicTacToe.get_whose_turn(self.state)
-    
-    def leaf(self):
-        """
-        Check if the node is winning/draw or not
-        """
-        self.leaf = TicTacToe.check_draw(self.state) or TicTacToe.check_winner(self.state, self.turn * -1)
-    
+        
     def __repr__(self):
         return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value}, uct_value={self._uct_value})"
     
@@ -224,19 +220,12 @@ class Node:
         """Exposes a traditional .copy() method directly on the instance."""
         return copy.copy(self)
     
-    def visualize_tree(self):
-        """
-        Visualize the tree
-        """
-        
-
-
 
 
 if __name__ == "__main__":
     env = TicTacToe()
-    agent=MonteCarloTreeSearch(env, epochs=2000)
-    agent.run()
+    agent=MonteCarloTreeSearch(env, epochs=10)
+    best_action = agent.search()
+    print(best_action)
 
-    for child in agent.root.children:
-        print(f"State: {child.state}, value: {child._value}, n_visit: {child._n_visits}, uct: {child._uct_value}")
+
