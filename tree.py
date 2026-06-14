@@ -2,16 +2,19 @@ from env import TicTacToe
 from network import PolicyValueNetwork
 
 import numpy as np
+import torch
 import math
 import copy
 from abc import ABC, abstractmethod
 
 class BaseMCTS(ABC):
-    def __init__(self, env, epochs=1000):
+    def __init__(self, env, epochs=1000, verbose=True, seed=42):
         self.env = env
         self.epochs = epochs
         self.root = Node(env.get_state())
         self.observed = self.root
+        self.verbose = verbose
+        self.rng = np.random.default_rng(seed=seed)
 
     def score(self, node: "Node"):
         """
@@ -41,7 +44,7 @@ class BaseMCTS(ABC):
         selected_node = self.observed
         while selected_node.is_fully_expanded() and not selected_node.leaf:
             selected_node = self.best_child(selected_node)
-        
+
         return selected_node
     
     @abstractmethod
@@ -77,6 +80,7 @@ class BaseMCTS(ABC):
         Args:
             reward: Reward after the simulation step.
         """
+
         back = node
 
         while back is not None:
@@ -89,6 +93,7 @@ class BaseMCTS(ABC):
             expanded_node = self.expand(selected_node)           # Expansion
             reward = self.evaluate(expanded_node)                # Simulation
             self.backpropagate(expanded_node, reward)            # Backpropagation
+            self.log(f"Epoch {epoch}, selecting node {selected_node.state}")
         
         return self.get_best_action()
     
@@ -103,12 +108,16 @@ class BaseMCTS(ABC):
                 self.observed = child
                 return
         raise ValueError("No child with that action")
+    
+    def log(self, msg):
+        if self.verbose:
+            print(msg)
             
 
 class VanillaMCTS(BaseMCTS):
     def __init__(self, env, epochs=1000, exploration_constant=1.41):
         super().__init__(env, epochs)
-        self.exploration_constant=1.41
+        self.exploration_constant=exploration_constant
 
 
     def u(self, node: "Node"):
@@ -141,49 +150,64 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41):
-        super().__init__(env, epochs)
+    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42):
+        super().__init__(env, epochs, seed=seed)
         self.network = network
         self.c_puct = c_puct
+        self.epsilon = epsilon
 
     def u(self, node: "Node"):
         return self.c_puct * self.p(node) * math.sqrt(node.parent._n_visits) / (1 + node._n_visits)
     
     def p(self, node: "Node"):
-        return max(node.children, key=lambda child:child.prior)
+        return node.prior
 
     def expand(self, selected_node: "Node"):
         if selected_node.leaf:
-            expanded_node = selected_node
+            return selected_node
         
         else:
-            turn = self.turn
+            turn = selected_node.turn
+            untried_action = selected_node.untried_actions
+
             # For network MCTS, expand all first
-            while untried_action:
+            while not selected_node.is_fully_expanded():
                 untried_action = selected_node.untried_actions.pop()
                 expanded_state = TicTacToe.transition_state(selected_node.state, untried_action, turn)
                 expanded_node = Node(expanded_state, selected_node, untried_action)
 
                 selected_node.add_child(expanded_node)
 
-        return expanded_node
+        return selected_node
 
     def evaluate(self, selected_node: "Node"):
-        state = selected_node.state
-        policy_head, value_head = self.network(state)
+        """
+        Updates the prior of the children of the selected node and evaluate the value of the node
+        """
+        if selected_node.leaf:
+            return selected_node.winner
 
+        state = selected_node.state
+        torch_state = torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0) 
+        with torch.no_grad():
+            policy_head, value_head = self.network(torch_state)
+
+        policy_head = policy_head.squeeze(0)
+        value_head = value_head.item()
+        
+        # Updates the prior of the children
         children = selected_node.children
         legal_actions = TicTacToe.get_legal_action(state)
 
-        mask = np.ones(len(policy_head), dtype=bool)
+        mask = np.ones(policy_head.shape, dtype=bool)
         mask[legal_actions] = False
         policy_head[mask] = 0
 
-        policy_head /= policy_head.sum()
+        policy_head /= torch.sum(policy_head)
 
         for child in children:
             a = child.action
-            child.prior = policy_head[a]
+            child.prior = policy_head[a].item()
 
         return value_head
 
@@ -240,7 +264,7 @@ class Node:
         """
         Record one visit and add value to the cumulative resward.
         Args:
-            value: reward to backpropagate into this node. (-1 if X wins, 1 if O wins, 0 if draw)
+            value: ABSOLUTE reward to backpropagate into this node. (-1 if X wins, 1 if O wins, 0 if draw)
          """
         self.increment_visit()
         value *= -self.turn      # Value is seen from parent's point of view
@@ -259,7 +283,7 @@ class Node:
         return self._value / self._n_visits
                 
     def __repr__(self):
-        return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value}, uct_value={self._uct_value})"
+        return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value})"
     
     def __copy__(self):
         """Implements copy.copy() behavior."""
@@ -274,7 +298,14 @@ class Node:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    agent=VanillaMCTS(env, epochs=10)
+    board = np.array(
+        [[-1, -1, 0],
+        [1, -1, 0],
+        [1, 0, 1]]
+    )
+    # env.reset(board)
+    network = PolicyValueNetwork()
+    agent=NetworkMCTS(env, network=network, epochs=1000)
     best_action = agent.search()
     print(best_action)
 

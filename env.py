@@ -36,7 +36,7 @@ class TicTacToe(gym.Env):
         else:
             self.board = board
 
-        self.turn = -1  # X always moves first
+        self.turn = TicTacToe.get_whose_turn(self.board)
  
         return self.board
         
