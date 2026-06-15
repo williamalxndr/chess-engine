@@ -1,15 +1,12 @@
 import numpy as np
 
 from tree import NetworkMCTS
-from env import TicTacToe
 from network import PolicyValueNetwork
 
 
-class SelfPlay:
-    def __init__(self, network: PolicyValueNetwork, board=None, epochs=1000, seed=42):
-        env = TicTacToe()
-        env.reset(board)
-        self.mcts = NetworkMCTS(env, network, epochs)
+class Generator:
+    def __init__(self, mcts: NetworkMCTS, epochs=1000, seed=42):
+        self.mcts = mcts
         self.rng = np.random.default_rng(seed)
 
     def reset(self):
@@ -60,10 +57,11 @@ class SelfPlay:
         """
         Reset the game, then
         MCTS plays 1 game until gets a result.
-        Returns:
-            buffer, result
-            buffer (list): a list contains [s_0, pi_0, s_1, pi_1, ..., s_t-1, pi_t-1]
-            result (int): 
+
+        ## Returns:
+            trajectory, result
+            trajectory (list): a list contains [s_0, pi_0, s_1, pi_1, ..., s_t-1, pi_t-1]
+            result (int): game results, -1 if X wins, 1 if O wins, 0 if draw
         """
         self.reset()
         trajectory = []
