@@ -23,3 +23,6 @@ class ReplayBuffer:
     
     def __len__(self):
         return min(self.count, self.max_size)
+
+    def is_empty(self):
+        return len(self) == 0

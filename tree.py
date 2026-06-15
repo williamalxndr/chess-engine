@@ -7,11 +7,13 @@ import math
 import copy
 from abc import ABC, abstractmethod
 
+BASE_BOARD = TicTacToe.base_state()
+
 class BaseMCTS(ABC):
-    def __init__(self, env, epochs=1000, verbose=True, seed=42):
-        self.env = env
+    def __init__(self, board=BASE_BOARD, epochs=1000, verbose=True, seed=42):
         self.epochs = epochs
-        self.root = Node(env.get_state())
+        self.board = board
+        self.root = Node(board)
         self.observed = self.root
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
@@ -20,7 +22,7 @@ class BaseMCTS(ABC):
         """
         Clears the stored node
         """
-        self.root = Node(self.env.get_state())
+        self.root = Node(self.board)
         self.observed = self.root
 
 
@@ -160,8 +162,8 @@ class BaseMCTS(ABC):
             
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, env, epochs=1000, exploration_constant=1.41):
-        super().__init__(env, epochs)
+    def __init__(self, board=BASE_BOARD, epochs=1000, exploration_constant=1.41):
+        super().__init__(board, epochs)
         self.exploration_constant=exploration_constant
 
 
@@ -195,8 +197,8 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
-        super().__init__(env, epochs, seed=seed)
+    def __init__(self, network: PolicyValueNetwork, board=BASE_BOARD, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
+        super().__init__(board, epochs, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
@@ -341,15 +343,8 @@ class Node:
 
 
 if __name__ == "__main__":
-    env = TicTacToe()
-    board = np.array(
-        [[-1, -1, 0],
-        [1, -1, 0],
-        [1, 0, 1]]
-    )
-    # env.reset(board)
     network = PolicyValueNetwork()
-    agent=NetworkMCTS(env, network=network, epochs=1000)
+    agent=NetworkMCTS(BASE_BOARD, network=network, epochs=1000)
     best_action = agent.search()
     print(best_action)
 
