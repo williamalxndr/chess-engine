@@ -207,13 +207,18 @@ class TicTacToe(gym.Env):
         return win or draw
     
     @staticmethod
-    def get_winner(board):
+    def get_result(board):
         if TicTacToe.check_winner(board, -1):
             return -1
         elif TicTacToe.check_winner(board, 1):
             return 1
         elif TicTacToe.check_draw(board):
             return 0
+        return None
+    
+    @staticmethod
+    def base_state():
+        return np.zeros([3,3])
         
 
 

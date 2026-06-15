@@ -16,6 +16,14 @@ class BaseMCTS(ABC):
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
 
+    def reset(self):
+        """
+        Clears the stored node
+        """
+        self.root = Node(self.env.get_state())
+        self.observed = self.root
+
+
     def score(self, node: "Node"):
         """
         Scoring a node for selection process
@@ -42,7 +50,7 @@ class BaseMCTS(ABC):
             Node: the best child node to be expanded
         """
         selected_node = self.observed
-        while selected_node.is_fully_expanded() and not selected_node.leaf:
+        while selected_node.is_fully_expanded() and not selected_node.is_leaf:
             selected_node = self.best_child(selected_node)
 
         return selected_node
@@ -88,6 +96,9 @@ class BaseMCTS(ABC):
             back = back.parent
 
     def search(self):
+        """
+        Return best action in the current position
+        """
         for epoch in range(1, self.epochs + 1):
             selected_node = self.select()                        # Selection
             expanded_node = self.expand(selected_node)           # Expansion
@@ -97,17 +108,51 @@ class BaseMCTS(ABC):
         
         return self.get_best_action()
     
-    def get_best_action(self):
-        best_child = max(self.observed.children, key=lambda child: child._n_visits) 
-        best_action = best_child.action
-        return best_action
+    def get_visit_count(self) -> np.ndarray:
+        """
+        Returns the visit counts array in the current observed node -> np.ndarray with size 9
+        """
+        counts = np.zeros(9)
+        for ch in self.observed.children:
+            counts[ch.action] = ch._n_visits
 
+        return counts
+        
+    def get_best_action(self):
+        return int(np.argmax(self.get_visit_count()))
+    
+    def get_policy(self) -> list:
+        """
+        Returns the list of policy with the size 9
+        for example [0.1, 0.2, 0, 0.15, 0, 0.05, 0.15, 0, 0.35]
+        """
+        counts = self.get_visit_count()
+        total = counts.sum()
+        if total == 0:
+            raise ValueError("Children has no visit at all. Consider running search() first or if you have run it, increase the number of epoch (at least greater than 9).")
+
+        return counts / total
+    
     def advance(self, action):
+        """
+        Advance self.observed after performing action
+
+        Returns:
+            is_leaf, result
+            is_leaf (bool): True if the board has winner or drawn, False otherwise
+            result (None/int): None if the game still going, otherwise return the result (-1/1/0)
+        """
         for child in self.observed.children:
             if child.action == action:
                 self.observed = child
-                return
+                return self.observed.is_leaf, self.observed.result
         raise ValueError("No child with that action")
+    
+    def get_current_state(self):
+        """
+        Returns the current observed state
+        """
+        return self.observed.state
     
     def log(self, msg):
         if self.verbose:
@@ -127,7 +172,7 @@ class VanillaMCTS(BaseMCTS):
         return uct_value
 
     def expand(self, selected_node: "Node"):
-        if selected_node.leaf:
+        if selected_node.is_leaf:
             expanded_node = selected_node
         
         else:
@@ -141,8 +186,8 @@ class VanillaMCTS(BaseMCTS):
         return expanded_node
 
     def evaluate(self, expanded_node: "Node"):
-        if expanded_node.leaf:
-            reward = expanded_node.winner
+        if expanded_node.is_leaf:
+            reward = expanded_node.result
         else:
             reward = TicTacToe.rollout(expanded_node.state)
 
@@ -163,7 +208,7 @@ class NetworkMCTS(BaseMCTS):
         return node.prior
 
     def expand(self, selected_node: "Node"):
-        if selected_node.leaf:
+        if selected_node.is_leaf:
             return selected_node
         
         else:
@@ -184,8 +229,8 @@ class NetworkMCTS(BaseMCTS):
         """
         Updates the prior of the children of the selected node and evaluate the value of the node
         """
-        if selected_node.leaf:
-            return selected_node.winner
+        if selected_node.is_leaf:
+            return selected_node.result
 
         state = selected_node.state
         torch_state = torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0) 
@@ -228,7 +273,7 @@ class Node:
         uct_value (float): last computed UCT score (for selection).
     """
 
-    def __init__(self, state, parent=None, action=None):
+    def __init__(self, state=TicTacToe.base_state(), parent=None, action=None):
         """
         Create a node for state, optionally linked to parent.
         """
@@ -240,9 +285,8 @@ class Node:
         self._value = 0.0
         self.prior = 0.0
         self.turn = TicTacToe.get_whose_turn(self.state)
-        self.leaf = TicTacToe.is_terminal(self.state)
-        if self.leaf:
-            self.winner = TicTacToe.get_winner(self.state)
+        self.is_leaf = TicTacToe.is_terminal(self.state)
+        self.result = TicTacToe.get_result(self.state)
         self.untried_actions = TicTacToe.get_legal_action(self.state)
 
     def add_child(self, child: "Node"):
