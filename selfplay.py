@@ -66,14 +66,14 @@ class SelfPlay:
             result (int): 
         """
         self.reset()
-        buffer = []
+        trajectory = []
 
         game_over = False
         while not game_over:
             state, policy, game_over, result = self.make_a_move()
-            buffer.append((state, policy))
+            trajectory.append((state, policy))
 
-        return buffer, result
+        return trajectory, result
         
         
 
