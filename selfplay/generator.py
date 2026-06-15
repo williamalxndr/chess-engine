@@ -1,7 +1,7 @@
 import numpy as np
 
-from tree import NetworkMCTS
-from network import PolicyValueNetwork
+from core.tree import NetworkMCTS
+from core.network import PolicyValueNetwork
 
 
 class Generator:

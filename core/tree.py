@@ -1,5 +1,5 @@
-from env import TicTacToe
-from network import PolicyValueNetwork
+from game.env import TicTacToe
+from core.network import PolicyValueNetwork
 
 import numpy as np
 import torch

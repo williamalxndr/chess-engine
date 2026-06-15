@@ -2,7 +2,7 @@ from torch import optim
 import torch
 from torch import nn
 
-from network import PolicyValueNetwork
+from core.network import PolicyValueNetwork
 
 class Trainer:
     def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam):

@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 
-from network import PolicyValueNetwork
-from tree import NetworkMCTS
-from env import TicTacToe
+from core.network import PolicyValueNetwork
+from core.tree import NetworkMCTS
+from game.env import TicTacToe
 
 
 class Arena:

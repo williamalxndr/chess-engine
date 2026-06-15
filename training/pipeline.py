@@ -2,12 +2,12 @@
 import numpy as np
 from torch import optim
 
-from env import TicTacToe
-from tree import NetworkMCTS
-from network import PolicyValueNetwork
-from replay_buffer import ReplayBuffer
-from generator import Generator
-from trainer import Trainer
+from game.env import TicTacToe
+from core.tree import NetworkMCTS
+from core.network import PolicyValueNetwork
+from selfplay.replay_buffer import ReplayBuffer
+from selfplay.generator import Generator
+from training.trainer import Trainer
 
 class Pipeline:
     """
