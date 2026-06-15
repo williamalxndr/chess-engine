@@ -41,40 +41,38 @@ class TicTacToe(gym.Env):
         return self.board
         
     
-    def step(self, action, player):
+    def step(self, action):
         """
         Make a move for player.
         Args: 
             action: board index to be filled by player
-            player: the player who moves
 
         Returns:
             observation (np.ndarray): game state after player makes a move
-            reward (int): 1 if win, 0 if the game continues
+            reward (int): -1 if X win, 1 if O wins, O if draw or the game continues
             terminated (bool): True if the game is over, False if the game still continues
             info (dict): "winner" (player / 0 /None) 
 
         Raises:
             ValueError: if it is not player's turn, or the action is illegal
         """
-        # Player turn validation
-        if self.turn != player:
-            raise ValueError("It's not your turn!")
+        current_player = TicTacToe.get_whose_turn(self.board)
 
         # Action validation
         if action not in self.get_legal_actions_self():
             raise ValueError("Action is illegal!")
         
-        self.board = self.transition_state(self.board, action, player)  # Player's move (fill the empty cell with player's mark)
+        self.board = self.transition_state(self.board, action, current_player)  # Player's move (fill the empty cell with player's mark)
 
-        if self.check_winner_self(player):
-            return self.board, 1, True, {"winner": player}  # Player wins
-
-        if self.check_draw_self():
-            return self.board, 0, True, {"winner": "Draw"}  # Draw
+        if self.is_terminal_self():
+            terminal = True
+            reward = self.get_result_self()
+        else:
+            terminal = False
+            reward = 0
         
         self.turn *= -1  # Switch player
-        return self.board, 0, False, {"winner": None}  # Game continues
+        return self.board, reward, terminal, {"winner": None}  # Game continues
     
     def get_state(self):
         return self.board
@@ -180,10 +178,18 @@ class TicTacToe(gym.Env):
         return [i for i in range(9) if board[divmod(i, 3)] == 0]
 
     @staticmethod
-    def transition_state(board: np.ndarray, action, turn):
+    def transition_state(board: np.ndarray, action, turn=None):
+        if turn is None:
+            turn = TicTacToe.get_whose_turn(board)
+
         board_copy = board.copy()
         row, col = divmod(action, 3)
-        board_copy[row][col] = turn
+
+        if board_copy[row][col] == 0:
+            board_copy[row][col] = turn
+        else:
+            raise ValueError("That cell is already occupied")
+
         return board_copy
 
     @staticmethod
@@ -206,6 +212,9 @@ class TicTacToe(gym.Env):
         win = TicTacToe.check_winner(board, -1) or TicTacToe.check_winner(board, 1)
         return win or draw
     
+    def is_terminal_self(self):
+        return TicTacToe.is_terminal(self.board)
+    
     @staticmethod
     def get_result(board):
         if TicTacToe.check_winner(board, -1):
@@ -215,6 +224,9 @@ class TicTacToe(gym.Env):
         elif TicTacToe.check_draw(board):
             return 0
         return None
+    
+    def get_result_self(self):
+        return TicTacToe.get_result(self.board)
     
     @staticmethod
     def base_state():
@@ -236,7 +248,7 @@ if __name__ == "__main__":
     while not done:
         env.render()
         action = int(input(f"Player {player_name[current_player]} turn. Enter action (0-8): "))
-        state, reward, done, info = env.step(action, current_player)
+        state, reward, done, info = env.step(action)
 
         if "error" in info:
             print(info["error"])

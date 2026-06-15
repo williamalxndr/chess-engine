@@ -10,9 +10,10 @@ from abc import ABC, abstractmethod
 BASE_BOARD = TicTacToe.base_state()
 
 class BaseMCTS(ABC):
-    def __init__(self, board=BASE_BOARD, epochs=1000, verbose=True, seed=42):
-        self.epochs = epochs
+    def __init__(self, env: TicTacToe, board=BASE_BOARD, epochs=1000, verbose=True, seed=42):
+        self.env = env
         self.board = board
+        self.epochs = epochs
         self.root = Node(board)
         self.observed = self.root
         self.verbose = verbose
@@ -25,6 +26,8 @@ class BaseMCTS(ABC):
         self.root = Node(self.board)
         self.observed = self.root
 
+    def set_env(self, env: TicTacToe):
+        self.env = env
 
     def score(self, node: "Node"):
         """
@@ -106,7 +109,6 @@ class BaseMCTS(ABC):
             expanded_node = self.expand(selected_node)           # Expansion
             reward = self.evaluate(expanded_node)                # Simulation
             self.backpropagate(expanded_node, reward)            # Backpropagation
-            self.log(f"Epoch {epoch}, selecting node {selected_node.state}")
         
         return self.get_best_action()
     
@@ -135,7 +137,7 @@ class BaseMCTS(ABC):
 
         return counts / total
     
-    def advance(self, action):
+    def advance(self, action, do_step=True):
         """
         Advance self.observed after performing action
 
@@ -146,8 +148,18 @@ class BaseMCTS(ABC):
         """
         for child in self.observed.children:
             if child.action == action:
+                if do_step and self.env is not None and isinstance(self.env, TicTacToe):
+                    self.env.step(action)
+
                 self.observed = child
+                    
+                assert np.all(self.observed.state == self.env.board)
                 return self.observed.is_leaf, self.observed.result
+            
+        if action in TicTacToe.get_legal_action(self.board):
+            self.observed.add_child_by_action(action)
+            return self.advance(action, do_step)
+
         raise ValueError("No child with that action")
     
     def get_current_state(self):
@@ -162,8 +174,8 @@ class BaseMCTS(ABC):
             
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, board=BASE_BOARD, epochs=1000, exploration_constant=1.41):
-        super().__init__(board, epochs)
+    def __init__(self, env: TicTacToe, board=BASE_BOARD, epochs=1000, exploration_constant=1.41):
+        super().__init__(env, board, epochs)
         self.exploration_constant=exploration_constant
 
 
@@ -197,8 +209,8 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, board=BASE_BOARD, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
-        super().__init__(board, epochs, seed=seed)
+    def __init__(self, env: TicTacToe, network: PolicyValueNetwork, board=BASE_BOARD, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
+        super().__init__(env, board, epochs, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
@@ -297,6 +309,15 @@ class Node:
         """
         self.children.append(child)
 
+    def add_child_by_action(self, action: int):
+        if action in TicTacToe.get_legal_action(self.state):
+            child_state = TicTacToe.transition_state(self.state, action)
+            child_node = Node(child_state, self, action)
+            self.add_child(child_node)
+        else:
+            raise ValueError("Action is illegal in the current state")
+        return child_node
+
     def is_fully_expanded(self):
         return len(self.untried_actions) == 0
 
@@ -344,8 +365,8 @@ class Node:
 
 if __name__ == "__main__":
     network = PolicyValueNetwork()
-    agent=NetworkMCTS(BASE_BOARD, network=network, epochs=1000)
+    env = TicTacToe()
+    agent=NetworkMCTS(env, network=network, board=BASE_BOARD, epochs=1000)
     best_action = agent.search()
-    print(best_action)
 
 
