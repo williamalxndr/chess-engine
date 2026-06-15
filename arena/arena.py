@@ -68,6 +68,14 @@ class Arena:
                 self.results[id(o_player)] += 1
             elif result == 0:
                 self.results["Draw"] += 1
+            
+            if result == -1:
+                result_msg = "X wins."
+            elif result == 1:
+                result_msg = "O wins."
+            elif result == 0:
+                result_msg = "Draw."
+            self.log(f"Game over! {result_msg}")
 
         self.log(f"Results: {self.results}")
         return self.results

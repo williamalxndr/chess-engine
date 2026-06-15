@@ -10,10 +10,10 @@ from abc import ABC, abstractmethod
 BASE_BOARD = TicTacToe.base_state()
 
 class BaseMCTS(ABC):
-    def __init__(self, env: TicTacToe = TicTacToe(), epochs=1000, verbose=True, seed=42):
-        self.env = env
+    def __init__(self, env: TicTacToe = None, epochs=1000, verbose=True, seed=42):
+        self.env = env if env is not None else TicTacToe()
         self.epochs = epochs
-        self.root = Node(env.board)
+        self.root = Node(self.env.board)
         self.observed = self.root
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
@@ -25,8 +25,11 @@ class BaseMCTS(ABC):
         self.root = Node(self.env.board)
         self.observed = self.root
 
+    # FIXME (ROOT CAUSE): only swaps self.env; root/observed still point to the old env's tree -> tree != env.
+    #                     Call self.reset() after setting self.env so root is rebuilt from env.board.
     def set_env(self, env: TicTacToe):
         self.env = env
+        self.reset()
 
     def score(self, node: "Node"):
         """
@@ -173,7 +176,7 @@ class BaseMCTS(ABC):
             
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, env: TicTacToe = TicTacToe(), epochs=1000, exploration_constant=1.41):
+    def __init__(self, env: TicTacToe = None, epochs=1000, exploration_constant=1.41):
         super().__init__(env, epochs)
         self.exploration_constant=exploration_constant
 
@@ -208,7 +211,7 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = TicTacToe(), epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
+    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
         super().__init__(env, epochs, seed=seed)
         self.network = network
         self.network.train(network_train)
