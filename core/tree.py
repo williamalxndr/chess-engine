@@ -10,11 +10,10 @@ from abc import ABC, abstractmethod
 BASE_BOARD = TicTacToe.base_state()
 
 class BaseMCTS(ABC):
-    def __init__(self, env: TicTacToe, board=BASE_BOARD, epochs=1000, verbose=True, seed=42):
+    def __init__(self, env: TicTacToe = TicTacToe(), epochs=1000, verbose=True, seed=42):
         self.env = env
-        self.board = board
         self.epochs = epochs
-        self.root = Node(board)
+        self.root = Node(env.board)
         self.observed = self.root
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
@@ -23,7 +22,7 @@ class BaseMCTS(ABC):
         """
         Clears the stored node
         """
-        self.root = Node(self.board)
+        self.root = Node(self.env.board)
         self.observed = self.root
 
     def set_env(self, env: TicTacToe):
@@ -156,7 +155,7 @@ class BaseMCTS(ABC):
                 assert np.all(self.observed.state == self.env.board)
                 return self.observed.is_leaf, self.observed.result
             
-        if action in TicTacToe.get_legal_action(self.board):
+        if action in TicTacToe.get_legal_action(self.observed.state):
             self.observed.add_child_by_action(action)
             return self.advance(action, do_step)
 
@@ -174,8 +173,8 @@ class BaseMCTS(ABC):
             
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, env: TicTacToe, board=BASE_BOARD, epochs=1000, exploration_constant=1.41):
-        super().__init__(env, board, epochs)
+    def __init__(self, env: TicTacToe = TicTacToe(), epochs=1000, exploration_constant=1.41):
+        super().__init__(env, epochs)
         self.exploration_constant=exploration_constant
 
 
@@ -209,8 +208,8 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, env: TicTacToe, network: PolicyValueNetwork, board=BASE_BOARD, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
-        super().__init__(env, board, epochs, seed=seed)
+    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = TicTacToe(), epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
+        super().__init__(env, epochs, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
@@ -365,8 +364,7 @@ class Node:
 
 if __name__ == "__main__":
     network = PolicyValueNetwork()
-    env = TicTacToe()
-    agent=NetworkMCTS(env, network=network, board=BASE_BOARD, epochs=1000)
+    agent=NetworkMCTS(network=network, board=BASE_BOARD, epochs=1000)
     best_action = agent.search()
 
 

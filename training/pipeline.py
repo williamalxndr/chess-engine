@@ -8,6 +8,7 @@ from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
 from selfplay.generator import Generator
 from training.trainer import Trainer
+from arena.arena import Arena
 
 class Pipeline:
     """
@@ -26,8 +27,8 @@ class Pipeline:
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optimizer)
-
         self.iterations = iterations
+        self.arena = Arena()
 
     def generate(self, num=10):
         for _ in range(num):
@@ -55,3 +56,6 @@ class Pipeline:
 
     def get_network(self):
         return self.network
+    
+    def evaluate(self, network_old: PolicyValueNetwork, network_new: PolicyValueNetwork):
+        player_1 = NetworkMCTS(TicTacToe(), )
