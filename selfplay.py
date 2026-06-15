@@ -27,11 +27,10 @@ class SelfPlay:
         """
         return self.mcts.get_policy()
     
-    def _sample_policy(self):
+    def _sample_policy(self, policy):
         """
         Returns the action the agent decides from the policy
         """
-        policy = self._get_policy
         action = self.rng.choice(len(policy), p=policy)
         return action 
     
@@ -41,9 +40,9 @@ class SelfPlay:
         Make a move then advance the board after performing the action
 
         Returns:
-            state, action, game_over, result
+            state, policy, game_over, result
             state (np.ndarray): The state of the current board
-            policy (list): The action the MCTS agent decides to do
+            policy (list): The policy after running the search
             game_over (bool): True if game has winner or drawn
             result (None/int): None if game still going, or return the winner (-1/1/0)
         """
@@ -51,7 +50,7 @@ class SelfPlay:
 
         state = self.mcts.get_current_state()
         policy = self._get_policy()
-        action = self._sample_policy()
+        action = self._sample_policy(policy)
 
         game_over, result = self.mcts.advance(action)
 
@@ -59,12 +58,14 @@ class SelfPlay:
 
     def generate(self):
         """
+        Reset the game, then
         MCTS plays 1 game until gets a result.
         Returns:
             buffer, result
             buffer (list): a list contains [s_0, pi_0, s_1, pi_1, ..., s_t-1, pi_t-1]
             result (int): 
         """
+        self.reset()
         buffer = []
 
         game_over = False

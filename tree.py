@@ -152,7 +152,7 @@ class BaseMCTS(ABC):
         """
         Returns the current observed state
         """
-        return self.observed.state
+        return self.observed.state.copy()
     
     def log(self, msg):
         if self.verbose:
@@ -195,9 +195,10 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42):
+    def __init__(self, env, network: PolicyValueNetwork, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
         super().__init__(env, epochs, seed=seed)
         self.network = network
+        self.network.train(network_train)
         self.c_puct = c_puct
         self.epsilon = epsilon
 
@@ -234,8 +235,7 @@ class NetworkMCTS(BaseMCTS):
 
         state = selected_node.state
         torch_state = torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0) 
-        with torch.no_grad():
-            policy_head, value_head = self.network(torch_state)
+        policy_head, value_head = self.network(torch_state)
 
         policy_head = policy_head.squeeze(0)
         value_head = value_head.item()
