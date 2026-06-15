@@ -20,6 +20,11 @@ class PolicyValueNetwork(nn.Module):
         )
     
     def forward(self, x):
+        """
+        Args: 
+            x (np.ndarray): input data (board) with shape (3,3)
+        Returns policy_head, value_head
+        """
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
