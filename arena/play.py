@@ -5,15 +5,17 @@ from core.network import PolicyValueNetwork
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A sample script demonstrating python argument parsing.")
-    parser.add_argument("--path", type=str, help="network you want to load", default="checkpoints/network_final.pt")
+    parser.add_argument("--path", type=str, help="network you want to load", default="network_final")
+    parser.add_argument("--num_games", type=int, help="how many times do you want to play against the bot", default=1)
+
     args = parser.parse_args()
 
     env = TicTacToe()
     network = PolicyValueNetwork.load(args.path)
 
     human_player = HumanPlayer()
-    network_player = NetworkMCTSPlayer(network)
+    bot_player = NetworkMCTSPlayer(network)
 
-    arena = Arena(env, human_player, network_player, verbose=True)
+    arena = Arena(env, human_player, bot_player, verbose=True, delay=5, num_games=args.num_games)
 
     arena.play()

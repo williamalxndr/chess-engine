@@ -105,7 +105,7 @@ class TicTacToe(gym.Env):
         Returns:
             list[int]: cell indices 0-8 that are unoccupied
         """
-        return self.get_legal_action(self.board)
+        return self.get_legal_actions(self.board)
     
     def render(self):
         """
@@ -135,7 +135,7 @@ class TicTacToe(gym.Env):
         if TicTacToe.check_winner(board_copy, player):
             return player
 
-        legal_action = TicTacToe.get_legal_action(board_copy)
+        legal_action = TicTacToe.get_legal_actions(board_copy)
         random_action = np.random.choice(legal_action)
 
         terminate = False
@@ -162,9 +162,9 @@ class TicTacToe(gym.Env):
     @staticmethod
     def get_whose_turn(board):
         unique, counts = np.unique(board, return_counts=True)
-        dict_unique = dict(zip(unique, counts))
-        x = dict_unique.get(-1, 0)
-        o = dict_unique.get(1, 0)
+        counts_by_player = dict(zip(unique, counts))
+        x = counts_by_player.get(-1, 0)
+        o = counts_by_player.get(1, 0)
 
         if o == x:
             return -1       # X turn, (1)
@@ -174,7 +174,7 @@ class TicTacToe(gym.Env):
             raise ValueError("Board is illegal!")
         
     @staticmethod
-    def get_legal_action(board):
+    def get_legal_actions(board):
         return [i for i in range(9) if board[divmod(i, 3)] == 0]
 
     @staticmethod

@@ -1,15 +1,20 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import random
+import time
+import threading
 
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
 from game.env import TicTacToe
+from arena.player import *
 
 
 class Arena:
-    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, verbose=False):
+    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, delay=5, num_games=1, verbose=False):
         self.verbose = verbose
+        self.delay = delay
+        self.num_games = num_games
         if env is None:
             self.env = TicTacToe()
         if player_1 is not None and player_2 is not None:
@@ -37,33 +42,51 @@ class Arena:
         self.player_2.set_env(env)
         self.env = env
 
-    def play(self, times=1):
-        for _ in range(times):
+    def sleep(self, current):
+        if not self.verbose or not current.is_bot:
+            return
+        
+        dots = ["   ", ".  ", ".. ", "..."]
+        i = 0
+        start = time.time()
+        while (time.time() - start) < self.delay:
+            print(f"\rBot is thinking{dots[i % len(dots)]}", end="", flush=True)
+            i += 1
+            time.sleep(0.4)
+        
+        print("\r" + " " * 25 + "\r", end="", flush=True)
+        
+    def play(self):
+        for _ in range(self.num_games):
             self.reset_env()
 
             game_over = False
             turn = -1
 
             current, other = random.sample([self.player_1, self.player_2], 2)
+
             x_player = current
             o_player = other
 
-            x_player.set_side(turn)
-            o_player.set_side(-turn)
+            current.set_side(turn)
+            other.set_side(-turn)
 
-            self.log("Good luck! ")
+            self.log(f"Good luck! \n{'Bot' if current.is_bot else 'Human'} moves first")
             self.render_board()
 
             while not game_over:
+                self.sleep(current)
                 action = current.select_action()
+
                 game_over, result = current.advance(action, do_step=True)
                 other.advance(action, do_step=False)
 
-                self.log(f"Player {'X' if turn == -1 else 'O'} plays {action}")
+                self.log(f"{'Bot' if current.is_bot else 'Human'} plays {action}")
                 self.render_board()
 
                 current, other = other, current
                 turn *= -1
+
 
             if result == -1:
                 self.results[id(x_player)] += 1
@@ -80,7 +103,6 @@ class Arena:
                 result_msg = "Draw."
             self.log(f"Game over! {result_msg}")
 
-        self.log(f"Results: {self.results}")
         return self.results
 
     def log(self, msg):
@@ -91,119 +113,6 @@ class Arena:
         if self.verbose:
             self.env.render()
 
-
-class Player(ABC):
-    def __init__(self):
-        super().__init__()
-
-    def set_side(self, side):
-        self.side = side
-
-    @abstractmethod
-    def set_env(self, env):
-        return NotImplemented
-    
-    @abstractmethod
-    def reset(self):
-        return NotImplemented
-
-    @abstractmethod
-    def select_action(self):
-        return NotImplemented
-    
-    @abstractmethod
-    def advance(self):
-        """
-        Should return game_over (bool), result (None/int)
-        """
-        return NotImplemented
-
-
-class HumanPlayer(Player):
-    def __init__(self):
-        super().__init__()
-   
-    def set_env(self, env):
-        self.env = env
-
-    def reset(self):
-        self.env.reset()
-
-    def select_action(self):
-        legal = False
-        legal_action = self.env.get_legal_actions_self()
-
-        while not legal:
-            action = int(input(f"{'X' if self.side == -1 else 'O'}'s turn! Input your action({legal_action}): "))
-
-            legal = action in legal_action
-
-        return action
-
-    def advance(self, action, do_step):
-        if do_step:
-            _, reward, terminated, _ = self.env.step(action)
-            return terminated, reward
-        return None
-
-class NetworkMCTSPlayer(Player):
-    def __init__(self, network: PolicyValueNetwork):
-        super().__init__()
-        self.mcts = NetworkMCTS(network, epsilon=0)
-
-    def reset(self):
-        self.mcts.env.reset()
-        self.mcts.reset()
-
-    def set_env(self, env):
-        self.mcts.set_env(env)
-
-    def select_action(self):
-        return self.mcts.search()
-    
-    def advance(self, action, do_step):
-        return self.mcts.advance(action, do_step)
-    
-class VanillaMCTSPlayer(Player):
-    def __init__(self):
-        super().__init__()
-        self.mcts = VanillaMCTS()
-
-    def reset(self):
-        self.mcts.env.reset()
-        self.mcts.reset()
-
-    def set_env(self, env):
-        self.mcts.set_env(env)
-
-    def advance(self, action, do_step):
-        return self.mcts.advance(action, do_step)
-    
-    def select_action(self):
-        return self.mcts.search()
-    
-
-class RandomPlayer(Player):
-    def __init__(self):
-        super().__init__()
-
-    def reset(self):
-        self.env.reset()
-
-    def set_env(self, env):
-        self.env = env
-
-    def advance(self, action, do_step):
-        if do_step:
-            _, reward, terminated, _ = self.env.step(action)
-            return terminated, reward
-        return None
-
-    def select_action(self):
-        legal_action = self.env.get_legal_actions_self()
-        random_action = random.choice(legal_action)
-
-        return random_action
 
 if __name__ == "__main__":
     env = TicTacToe()

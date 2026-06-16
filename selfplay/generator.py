@@ -31,7 +31,7 @@ class Generator:
         action = self.rng.choice(len(policy), p=policy)
         return action 
     
-    def make_a_move(self):
+    def make_move(self):
         """
         Run a search, decides an action, then
         Make a move then advance the board after performing the action
@@ -68,7 +68,7 @@ class Generator:
 
         game_over = False
         while not game_over:
-            state, policy, game_over, result = self.make_a_move()
+            state, policy, game_over, result = self.make_move()
             trajectory.append((state, policy))
 
         return trajectory, result

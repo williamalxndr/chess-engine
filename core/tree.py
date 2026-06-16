@@ -10,9 +10,9 @@ from abc import ABC, abstractmethod
 BASE_BOARD = TicTacToe.base_state()
 
 class BaseMCTS(ABC):
-    def __init__(self, env: TicTacToe = None, epochs=1000, verbose=True, seed=42):
+    def __init__(self, env: TicTacToe = None, num_rollout=1000, verbose=True, seed=42):
         self.env = env if env is not None else TicTacToe()
-        self.epochs = epochs
+        self.num_rollout = num_rollout
         self.root = Node(self.env.board)
         self.observed = self.root
         self.verbose = verbose
@@ -95,11 +95,9 @@ class BaseMCTS(ABC):
             reward: Reward after the simulation step.
         """
 
-        back = node
-
-        while back is not None:
-            back.update(reward)
-            back = back.parent
+        while node is not None:
+            node.update(reward)
+            node = node.parent
 
     def search(self):
         """
@@ -108,7 +106,7 @@ class BaseMCTS(ABC):
 
         self._apply_root_noise()
 
-        for epoch in range(1, self.epochs + 1):
+        for _ in range(1, self.num_rollout + 1):
             selected_node = self.select()                        # Selection
             expanded_node = self.expand(selected_node)           # Expansion
             reward = self.evaluate(expanded_node)                # Simulation
@@ -116,28 +114,28 @@ class BaseMCTS(ABC):
         
         return self.get_best_action()
     
-    def get_visit_count(self) -> np.ndarray:
+    def get_child_visit_count(self) -> np.ndarray:
         """
         Returns the visit counts array in the current observed node -> np.ndarray with size 9
         """
         counts = np.zeros(9)
         for ch in self.observed.children:
-            counts[ch.action] = ch._n_visits
+            counts[ch.action] = ch._visit_count
 
         return counts
         
     def get_best_action(self):
-        return int(np.argmax(self.get_visit_count()))
+        return int(np.argmax(self.get_child_visit_count()))
     
     def get_policy(self) -> list:
         """
         Returns the list of policy with the size 9
         for example [0.1, 0.2, 0, 0.15, 0, 0.05, 0.15, 0, 0.35]
         """
-        counts = self.get_visit_count()
+        counts = self.get_child_visit_count()
         total = counts.sum()
         if total == 0:
-            raise ValueError("Children has no visit at all. Consider running search() first or if you have run it, increase the number of epoch (at least greater than 9).")
+            raise ValueError("Children has no visit at all. Consider running search() first or if you have run it, increase the number of rollout (at least greater than 9).")
 
         return counts / total
     
@@ -160,7 +158,7 @@ class BaseMCTS(ABC):
                 assert np.all(self.observed.state == self.env.board)
                 return self.observed.is_leaf, self.observed.result
             
-        if action in TicTacToe.get_legal_action(self.observed.state):
+        if action in TicTacToe.get_legal_actions(self.observed.state):
             self.observed.add_child_by_action(action)
             return self.advance(action, do_step)
 
@@ -182,15 +180,15 @@ class BaseMCTS(ABC):
             
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, env: TicTacToe = None, epochs=1000, exploration_constant=1.41):
-        super().__init__(env, epochs)
+    def __init__(self, env: TicTacToe = None, num_rollout=1000, exploration_constant=1.41):
+        super().__init__(env, num_rollout)
         self.exploration_constant=exploration_constant
 
 
     def u(self, node: "Node"):
-        if node._n_visits == 0:
+        if node._visit_count == 0:
             return float('inf')
-        uct_value = node.q() + self.exploration_constant * (math.sqrt(np.log(node.parent._n_visits) / node._n_visits))
+        uct_value = node.q() + self.exploration_constant * (math.sqrt(np.log(node.parent._visit_count) / node._visit_count))
         return uct_value
 
     def expand(self, selected_node: "Node"):
@@ -220,8 +218,8 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03, network_train=False):
-        super().__init__(env, epochs, seed=seed)
+    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, num_rollout=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03, network_train=False):
+        super().__init__(env, num_rollout, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
@@ -229,7 +227,7 @@ class NetworkMCTS(BaseMCTS):
         self.alpha = alpha
 
     def u(self, node: "Node"):
-        return self.c_puct * self.p(node) * math.sqrt(node.parent._n_visits) / (1 + node._n_visits)
+        return self.c_puct * self.p(node) * math.sqrt(node.parent._visit_count) / (1 + node._visit_count)
     
     def p(self, node: "Node"):
         return (1 - self.epsilon) * node.prior + self.epsilon * node.noise
@@ -240,7 +238,6 @@ class NetworkMCTS(BaseMCTS):
         
         else:
             turn = selected_node.turn
-            untried_action = selected_node.untried_actions
 
             # For network MCTS, expand all first
             while not selected_node.is_fully_expanded():
@@ -268,7 +265,7 @@ class NetworkMCTS(BaseMCTS):
         
         # Updates the prior of the children
         children = selected_node.children
-        legal_actions = TicTacToe.get_legal_action(state)
+        legal_actions = TicTacToe.get_legal_actions(state)
 
         mask = np.ones(policy_head.shape, dtype=bool)
         mask[legal_actions] = False
@@ -292,7 +289,7 @@ class NetworkMCTS(BaseMCTS):
             self.expand(root) 
             self.evaluate(root) 
         
-        legal_actions = TicTacToe.get_legal_action(root.state)
+        legal_actions = TicTacToe.get_legal_actions(root.state)
         noise = self.rng.dirichlet([self.alpha] * len(legal_actions))
         
         action_to_noise = {a: noise[i] for i, a in enumerate(legal_actions)}
@@ -324,14 +321,14 @@ class Node:
         self.parent = parent
         self.action = action
         self.children = []
-        self._n_visits = 0
+        self._visit_count = 0
         self._value = 0.0
         self.prior = 0.0
         self.noise = 0.0
         self.turn = TicTacToe.get_whose_turn(self.state)
         self.is_leaf = TicTacToe.is_terminal(self.state)
         self.result = TicTacToe.get_result(self.state)
-        self.untried_actions = TicTacToe.get_legal_action(self.state)
+        self.untried_actions = TicTacToe.get_legal_actions(self.state)
 
     def add_child(self, child: "Node"):
         """
@@ -340,7 +337,7 @@ class Node:
         self.children.append(child)
 
     def add_child_by_action(self, action: int):
-        if action in TicTacToe.get_legal_action(self.state):
+        if action in TicTacToe.get_legal_actions(self.state):
             child_state = TicTacToe.transition_state(self.state, action)
             child_node = Node(child_state, self, action)
             self.add_child(child_node)
@@ -355,7 +352,7 @@ class Node:
         """
         Increment the n visit by one
         """
-        self._n_visits += 1
+        self._visit_count += 1
 
     def update(self, value):
         """
@@ -375,12 +372,12 @@ class Node:
             float: average reward of this node.
         """
 
-        if self._n_visits == 0:
+        if self._visit_count == 0:
             return 0
-        return self._value / self._n_visits
+        return self._value / self._visit_count
                 
     def __repr__(self):
-        return f"Node(state=\n{self.state}, \nvisits={self._n_visits}, value={self._value})"
+        return f"Node(state=\n{self.state}, \nvisits={self._visit_count}, value={self._value})"
     
     def __copy__(self):
         """Implements copy.copy() behavior."""
@@ -395,7 +392,7 @@ class Node:
 
 if __name__ == "__main__":
     network = PolicyValueNetwork()
-    agent=NetworkMCTS(network=network, board=BASE_BOARD, epochs=1000)
+    agent=NetworkMCTS(network=network, board=BASE_BOARD, num_rollout=1000)
     best_action = agent.search()
 
 

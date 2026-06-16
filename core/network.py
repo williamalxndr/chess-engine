@@ -31,6 +31,7 @@ class PolicyValueNetwork(nn.Module):
 
     @staticmethod
     def load(path: str, body_channels: int = 16) -> "PolicyValueNetwork":
+        path = f"checkpoints/{path}.pt"
         network = PolicyValueNetwork(body_channels=body_channels)
         network.load_state_dict(torch.load(path, weights_only=True))
         return network
@@ -46,10 +47,10 @@ class ResidualBlock(nn.Module):
 
         # Layers
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
-        self.bn1 = nn.GroupNorm(out_channels, out_channels)
+        self.norm1 = nn.GroupNorm(out_channels, out_channels)
         self.relu1 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding)
-        self.bn2 = nn.GroupNorm(out_channels, out_channels)
+        self.norm2 = nn.GroupNorm(out_channels, out_channels)
 
         # Automatically creates a downsample
         if in_channels != out_channels:
@@ -59,10 +60,10 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.norm1(out)
         out = self.relu1(out)
         out = self.conv2(out)
-        out = self.bn2(out)
+        out = self.norm2(out)
 
         if x.shape[-2:] != out.shape[-2:]:
             x = F.adaptive_avg_pool2d(x, out.shape[-2:])

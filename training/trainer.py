@@ -26,14 +26,18 @@ class Trainer:
         self.network.train()
 
         s = s.unsqueeze(1)
-        policy_head, value_head = self.network(s)
 
-        loss = self.policy_loss(policy_head, pi) + self.value_loss(value_head, z)
+        policy_head, value_head = self.network(s)
+        
+        p_loss = self.policy_loss(policy_head, pi)
+        v_loss = self.value_loss(value_head, z)
+        loss = p_loss + v_loss
+
         loss.backward()
 
-        print(f"Loss: {loss}", end="\r", flush=True)     
-
         self.optimizer.step()
+
+        return loss, p_loss, v_loss
     
 
 
