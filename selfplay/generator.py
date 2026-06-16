@@ -5,7 +5,7 @@ from core.network import PolicyValueNetwork
 
 
 class Generator:
-    def __init__(self, mcts: NetworkMCTS, epochs=1000, seed=42):
+    def __init__(self, mcts: NetworkMCTS, seed=42):
         self.mcts = mcts
         self.rng = np.random.default_rng(seed)
 

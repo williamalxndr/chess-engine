@@ -22,11 +22,10 @@ class BaseMCTS(ABC):
         """
         Clears the stored node
         """
+        self.env.reset()
         self.root = Node(self.env.board)
         self.observed = self.root
 
-    # FIXME (ROOT CAUSE): only swaps self.env; root/observed still point to the old env's tree -> tree != env.
-    #                     Call self.reset() after setting self.env so root is rebuilt from env.board.
     def set_env(self, env: TicTacToe):
         self.env = env
         self.reset()

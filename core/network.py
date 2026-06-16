@@ -21,7 +21,7 @@ class PolicyValueNetwork(nn.Module):
     
     def forward(self, x):
         """
-        Args: 
+        Args:
             x (np.ndarray): input data (board) with shape (3,3)
         Returns policy_head, value_head
         """

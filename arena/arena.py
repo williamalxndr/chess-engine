@@ -8,7 +8,7 @@ from game.env import TicTacToe
 
 
 class Arena:
-    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, verbose=True):
+    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, verbose=False):
         self.verbose = verbose
         if env is None:
             self.env = TicTacToe()
@@ -57,7 +57,8 @@ class Arena:
                 other.advance(action, do_step=False)
 
                 self.log(f"Player {'X' if turn == -1 else 'O'} plays {action}")
-                self.env.render()
+                if self.verbose:
+                    self.env.render()
 
                 current, other = other, current
                 turn *= -1

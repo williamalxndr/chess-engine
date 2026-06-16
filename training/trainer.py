@@ -23,10 +23,13 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)  
         self.network.train()
 
+        s = s.unsqueeze(1)
         policy_head, value_head = self.network(s)
 
         loss = self.policy_loss(policy_head, pi) + self.value_loss(value_head, z)
         loss.backward()
+
+        print(f"Loss: {loss}")
         
         self.optimizer.step()
 
