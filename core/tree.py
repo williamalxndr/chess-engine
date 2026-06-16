@@ -218,12 +218,13 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, num_rollout=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03, network_train=False):
+    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, num_rollout=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03, add_noise=False, network_train=False):
         super().__init__(env, num_rollout, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
-        self.epsilon = epsilon
+        if add_noise:
+            self.epsilon = epsilon
         self.alpha = alpha
 
     def u(self, node: "Node"):

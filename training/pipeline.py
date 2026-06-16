@@ -34,7 +34,7 @@ class Pipeline:
         self.steps_per_iter = steps_per_iter
         self.early_stopping = early_stopping
 
-        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, seed=seed)
+        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
