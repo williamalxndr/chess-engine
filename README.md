@@ -134,4 +134,7 @@ Self-Play  -->  Replay Buffer  -->  Network Update  -->  Arena
 2. `replay_buffer.py` stores and samples these tuples
 3. `trainer.py` minimizes combined policy loss (cross-entropy) + value loss (MSE)
 
+
+For more details, see the [AlphaGo Zero paper](./agz_unformatted_nature.pdf).
+
 ---
