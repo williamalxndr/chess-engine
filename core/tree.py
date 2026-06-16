@@ -105,6 +105,9 @@ class BaseMCTS(ABC):
         """
         Return best action in the current position
         """
+
+        self._apply_root_noise()
+
         for epoch in range(1, self.epochs + 1):
             selected_node = self.select()                        # Selection
             expanded_node = self.expand(selected_node)           # Expansion
@@ -162,6 +165,10 @@ class BaseMCTS(ABC):
             return self.advance(action, do_step)
 
         raise ValueError("No child with that action")
+
+    @abstractmethod
+    def _apply_root_noise(self):
+        return NotImplemented
     
     def get_current_state(self):
         """
@@ -208,20 +215,24 @@ class VanillaMCTS(BaseMCTS):
 
         return reward
 
+    def _apply_root_noise(self):
+        return 
+
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, network_train=False):
+    def __init__(self, network: PolicyValueNetwork, env: TicTacToe = None, epochs=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03, network_train=False):
         super().__init__(env, epochs, seed=seed)
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
         self.epsilon = epsilon
+        self.alpha = alpha
 
     def u(self, node: "Node"):
         return self.c_puct * self.p(node) * math.sqrt(node.parent._n_visits) / (1 + node._n_visits)
     
     def p(self, node: "Node"):
-        return node.prior
+        return (1 - self.epsilon) * node.prior + self.epsilon * node.noise
 
     def expand(self, selected_node: "Node"):
         if selected_node.is_leaf:
@@ -271,7 +282,24 @@ class NetworkMCTS(BaseMCTS):
 
         return value_head
 
+    def _apply_root_noise(self):
+        if self.epsilon == 0:
+            return
         
+        root = self.observed
+        
+        if not root.is_fully_expanded():
+            self.expand(root) 
+            self.evaluate(root) 
+        
+        legal_actions = TicTacToe.get_legal_action(root.state)
+        noise = self.rng.dirichlet([self.alpha] * len(legal_actions))
+        
+        action_to_noise = {a: noise[i] for i, a in enumerate(legal_actions)}
+        
+        for child in root.children:
+            child.noise = action_to_noise[child.action]
+    
 
 class Node:
     """
@@ -299,6 +327,7 @@ class Node:
         self._n_visits = 0
         self._value = 0.0
         self.prior = 0.0
+        self.noise = 0.0
         self.turn = TicTacToe.get_whose_turn(self.state)
         self.is_leaf = TicTacToe.is_terminal(self.state)
         self.result = TicTacToe.get_result(self.state)

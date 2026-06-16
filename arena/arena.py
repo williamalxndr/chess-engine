@@ -37,7 +37,7 @@ class Arena:
         self.player_2.set_env(env)
         self.env = env
 
-    def play(self, times):
+    def play(self, times=1):
         for _ in range(times):
             self.reset_env()
 
@@ -51,14 +51,16 @@ class Arena:
             x_player.set_side(turn)
             o_player.set_side(-turn)
 
+            self.log("Good luck! ")
+            self.render_board()
+
             while not game_over:
                 action = current.select_action()
                 game_over, result = current.advance(action, do_step=True)
                 other.advance(action, do_step=False)
 
                 self.log(f"Player {'X' if turn == -1 else 'O'} plays {action}")
-                if self.verbose:
-                    self.env.render()
+                self.render_board()
 
                 current, other = other, current
                 turn *= -1
@@ -84,6 +86,10 @@ class Arena:
     def log(self, msg):
         if self.verbose:
             print(msg)
+
+    def render_board(self):
+        if self.verbose:
+            self.env.render()
 
 
 class Player(ABC):
@@ -143,7 +149,7 @@ class HumanPlayer(Player):
 class NetworkMCTSPlayer(Player):
     def __init__(self, network: PolicyValueNetwork):
         super().__init__()
-        self.mcts = NetworkMCTS(network)
+        self.mcts = NetworkMCTS(network, epsilon=0)
 
     def reset(self):
         self.mcts.env.reset()
@@ -177,8 +183,27 @@ class VanillaMCTSPlayer(Player):
         return self.mcts.search()
     
 
+class RandomPlayer(Player):
+    def __init__(self):
+        super().__init__()
 
-    
+    def reset(self):
+        self.env.reset()
+
+    def set_env(self, env):
+        self.env = env
+
+    def advance(self, action, do_step):
+        if do_step:
+            _, reward, terminated, _ = self.env.step(action)
+            return terminated, reward
+        return None
+
+    def select_action(self):
+        legal_action = self.env.get_legal_actions_self()
+        random_action = random.choice(legal_action)
+
+        return random_action
 
 if __name__ == "__main__":
     env = TicTacToe()
