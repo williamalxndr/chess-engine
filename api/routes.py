@@ -9,6 +9,13 @@ api_bp = Blueprint('main', __name__)
 
 @api_bp.route("/games/<game>/move", methods=["POST"])
 def move(game):
+    """
+    Returns {
+        "move": int,
+        "game_over": bool,
+        "result": int,
+    }
+    """
     success_schema = SuccessResponse()
     error_schema = ErrorResponse()
     move_request_schema = MoveRequest()
