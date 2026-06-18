@@ -96,7 +96,7 @@ class TicTacToe(gym.Env):
         Returns:
             bool: True if draw, False if the game still running
         """
-        return self.check_draw(self.state)
+        return self.check_draw(self.board)
     
     def get_legal_actions_self(self):
         """
@@ -207,8 +207,23 @@ class TicTacToe(gym.Env):
         return np.all(board)
     
     @staticmethod
+    def is_legal_board(board):
+        if isinstance(board, np.ndarray) and board.shape == (3,3):
+            unique_vals, counts = np.unique(board, return_counts=True)
+            freq_dict = dict(zip(unique_vals, counts))
+            x = freq_dict.get(-1, 0)
+            o = freq_dict.get(1, 0)
+            empty = freq_dict.get(0, 0)
+
+            if (empty + x + o) == 9 and ((x - 1) == o or x == o):
+                    return True
+        
+        raise IllegalBoardError()
+
+    
+    @staticmethod
     def is_terminal(board):
-        draw = np.all(board)
+        draw = bool(np.all(board))
         win = TicTacToe.check_winner(board, -1) or TicTacToe.check_winner(board, 1)
         return win or draw
     
@@ -232,6 +247,12 @@ class TicTacToe(gym.Env):
     def base_state():
         return np.zeros([3,3])
         
+
+class IllegalBoardError(Exception):
+    def __init__(self, message="Illegal board"):
+        self.message = message
+        super().__init__(self.message)
+
 
 
 if __name__ == "__main__":

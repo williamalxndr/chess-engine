@@ -18,11 +18,11 @@ class BaseMCTS(ABC):
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
 
-    def reset(self):
+    def reset(self, board=None):
         """
         Clears the stored node
         """
-        self.env.reset()
+        self.env.reset(board)
         self.root = Node(self.env.board)
         self.observed = self.root
 
@@ -56,7 +56,7 @@ class BaseMCTS(ABC):
             Node: the best child node to be expanded
         """
         selected_node = self.observed
-        while selected_node.is_fully_expanded() and not selected_node.is_leaf:
+        while selected_node.is_fully_expanded() and not selected_node.get_leaf():
             selected_node = self.best_child(selected_node)
 
         return selected_node
@@ -155,8 +155,7 @@ class BaseMCTS(ABC):
 
                 self.observed = child
                     
-                assert np.all(self.observed.state == self.env.board)
-                return self.observed.is_leaf, self.observed.result
+                return self.observed.get_leaf(), self.observed.get_result()
             
         if action in TicTacToe.get_legal_actions(self.observed.state):
             self.observed.add_child_by_action(action)
@@ -192,7 +191,7 @@ class VanillaMCTS(BaseMCTS):
         return uct_value
 
     def expand(self, selected_node: "Node"):
-        if selected_node.is_leaf:
+        if selected_node.get_leaf():
             expanded_node = selected_node
         
         else:
@@ -206,7 +205,7 @@ class VanillaMCTS(BaseMCTS):
         return expanded_node
 
     def evaluate(self, expanded_node: "Node"):
-        if expanded_node.is_leaf:
+        if expanded_node.get_leaf():
             reward = expanded_node.result
         else:
             reward = TicTacToe.rollout(expanded_node.state)
@@ -223,8 +222,7 @@ class NetworkMCTS(BaseMCTS):
         self.network = network
         self.network.train(network_train)
         self.c_puct = c_puct
-        if add_noise:
-            self.epsilon = epsilon
+        self.epsilon = epsilon if add_noise else 0
         self.alpha = alpha
 
     def u(self, node: "Node"):
@@ -234,7 +232,7 @@ class NetworkMCTS(BaseMCTS):
         return (1 - self.epsilon) * node.prior + self.epsilon * node.noise
 
     def expand(self, selected_node: "Node"):
-        if selected_node.is_leaf:
+        if selected_node.get_leaf():
             return selected_node
         
         else:
@@ -254,8 +252,8 @@ class NetworkMCTS(BaseMCTS):
         """
         Updates the prior of the children of the selected node and evaluate the value of the node
         """
-        if selected_node.is_leaf:
-            return selected_node.result
+        if selected_node.get_leaf():
+            return selected_node.get_result()
 
         state = selected_node.state
         torch_state = torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0) 
@@ -345,6 +343,12 @@ class Node:
         else:
             raise ValueError("Action is illegal in the current state")
         return child_node
+    
+    def get_leaf(self):
+        return self.is_leaf
+
+    def get_result(self):
+        return self.result
 
     def is_fully_expanded(self):
         return len(self.untried_actions) == 0

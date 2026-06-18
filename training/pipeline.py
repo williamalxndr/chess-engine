@@ -27,7 +27,7 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=50, steps_per_iter=200, early_stopping=50):
+    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
         self.network = network
         self.batch_size = batch_size
         self.iterations = iterations
