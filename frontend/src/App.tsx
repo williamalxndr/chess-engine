@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { Game } from "./Game";
+import "./App.css";
 
-function App() {  
-
+function App() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Game />
+    </div>
+  );
 }
 
-export default App
+export default App;

@@ -1,9 +1,9 @@
 import type { MoveRequest, MoveResponse } from "@/types";
 
-const BASE_URL = import.meta.env.VITE_API_URL;
+const PREFIX = "/api"
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T>{
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    const response = await fetch(`${PREFIX}${endpoint}`, {
         "headers": {
             "Content-Type": "application/json",
             ...options?.headers,
@@ -14,12 +14,14 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T>{
     if (!response.ok) {
         throw new Error(`HTTP Error! Status: ${response.status}`);
     }
-    return response.json()
+
+    const json = await response.json();   
+    return json.data;  
 }
 
 export const api = {
-    move: (data: MoveRequest, game: string) => 
-        request<MoveResponse>(`games/${game}/move`,
+    getMove: (data: MoveRequest, game: string) => 
+        request<MoveResponse>(`/games/${game}/move`,
             {
                 method: "POST",
                 body: JSON.stringify(data)

@@ -1,3 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Patrick+Hand&display=swap');
+
+@import "tailwindcss";
+
+html, body {
+  background: #faf8f3;
+  color-scheme: light;
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -109,3 +119,4 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
