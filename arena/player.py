@@ -3,6 +3,7 @@ import random
 
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
+from game.rules import RULES_REGISTRY
 
 class Player(ABC):
     def __init__(self):
@@ -44,7 +45,7 @@ class HumanPlayer(Player):
 
     def select_action(self):
         legal = False
-        legal_action = self.env.get_legal_actions_self()
+        legal_action = self.env.get_legal_actions()
 
         while not legal:
             action = int(input(f"Your turn({'X' if self.side == -1 else 'O'})! Input your action({legal_action}): "))
@@ -62,7 +63,7 @@ class HumanPlayer(Player):
 class NetworkMCTSPlayer(Player):
     def __init__(self, network: PolicyValueNetwork):
         super().__init__()
-        self.mcts = NetworkMCTS(network, epsilon=0)
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY["tictactoe"], epsilon=0)
         self.is_bot = True
 
     def reset(self):
@@ -115,7 +116,7 @@ class RandomPlayer(Player):
         return None
 
     def select_action(self):
-        legal_action = self.env.get_legal_actions_self()
+        legal_action = self.env.get_legal_actions()
         random_action = random.choice(legal_action)
 
         return random_action

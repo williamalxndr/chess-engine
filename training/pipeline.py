@@ -9,6 +9,7 @@ from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, 
 
 
 from game.env import TicTacToe
+from game.rules import RULES_REGISTRY
 from core.tree import NetworkMCTS
 from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
@@ -34,7 +35,7 @@ class Pipeline:
         self.steps_per_iter = steps_per_iter
         self.early_stopping = early_stopping
 
-        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY["tictactoe"], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
