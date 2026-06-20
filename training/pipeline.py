@@ -28,21 +28,24 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
         self.network = network
         self.batch_size = batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
         self.early_stopping = early_stopping
 
-        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY["tictactoe"], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
+        network = PolicyValueNetwork(RULES_REGISTRY[game]) if network is None else network
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
-    def generate(self, num_games=10):
-        for _ in range(num_games):
+    def generate(self):
+        num_generate = self.batch_size // 5
+
+        for _ in range(num_generate):
             trajectory, z = self.generator.generate()
             self.replay_buffer.add(trajectory, z)
 
@@ -104,7 +107,7 @@ class Pipeline:
                 # LR scheduling
                 self.trainer.scheduler.step()
 
-        self.save(f"checkpoints/{path}.pt")
+        self.network.save(path)
 
         print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --path {path}`")
 
@@ -153,7 +156,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    network = PolicyValueNetwork()
+    network = PolicyValueNetwork(RULES_REGISTRY["tictactoe"])
     pipeline = Pipeline(network, iterations=args.iterations, steps_per_iter=args.steps_per_iter, batch_size=args.batch_size)
 
     pipeline.train(args.path)

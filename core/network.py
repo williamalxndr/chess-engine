@@ -1,16 +1,24 @@
+from types import SimpleNamespace
+
 from torch import nn
 import torch
 import math
 import torch.nn.functional as F
 
+from game.rules import Rules
+
+
 class PolicyValueNetwork(nn.Module):
-    def __init__(self, body_channels=16):
+    def __init__(self, rules: Rules, body_channels=16):
         super().__init__()
+        self.action_space_size = rules.action_space_size
+        self.body_channels = body_channels
+
         self.body = ResidualBlock(1, body_channels, 2, 1, 1)
         self.policy_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(body_channels, 9),
+            nn.Linear(body_channels, rules.action_space_size),
             nn.Softmax(dim=1)
         )
         self.value_head = nn.Sequential(
@@ -19,7 +27,7 @@ class PolicyValueNetwork(nn.Module):
             nn.Linear(body_channels, 1),
             nn.Tanh()
         )
-    
+
     def forward(self, x):
         """
         Args:
@@ -29,12 +37,28 @@ class PolicyValueNetwork(nn.Module):
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
+    def save(self, path: str):
+        """
+        Saves weights together with the architecture metadata needed to
+        reconstruct this network, so load() never needs an external rules
+        argument. Only plain ints go into the checkpoint -- safe to load
+        back with weights_only=True.
+        """
+        torch.save({
+            "state_dict": self.state_dict(),
+            "action_space_size": self.action_space_size,
+            "body_channels": self.body_channels,
+        }, f"checkpoints/{path}.pt")
+
     @staticmethod
-    def load(path: str, body_channels: int = 16) -> "PolicyValueNetwork":
-        path = f"checkpoints/{path}.pt"
-        network = PolicyValueNetwork(body_channels=body_channels)
-        network.load_state_dict(torch.load(path, weights_only=True))
+    def load(path: str) -> "PolicyValueNetwork":
+        checkpoint = torch.load(f"checkpoints/{path}.pt", weights_only=True)
+
+        rules_stub = SimpleNamespace(action_space_size=checkpoint["action_space_size"])
+        network = PolicyValueNetwork(rules=rules_stub, body_channels=checkpoint["body_channels"])
+        network.load_state_dict(checkpoint["state_dict"])
         return network
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -69,7 +93,7 @@ class ResidualBlock(nn.Module):
             x = F.adaptive_avg_pool2d(x, out.shape[-2:])
         if self.in_channels != self.out_channels:
             x = self.channel_proj(x)
-        
+
         out += x
         out = self.relu2(out)
         return out
