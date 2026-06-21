@@ -25,8 +25,6 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)  
         self.network.train()
 
-        s = s.unsqueeze(1)
-
         policy_head, value_head = self.network(s)
         
         p_loss = self.policy_loss(policy_head, pi)

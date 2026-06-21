@@ -69,6 +69,7 @@ class Generator:
         game_over = False
         while not game_over:
             state, policy, game_over, result = self.make_move()
+            state = self.mcts.rules.encode(state)
             trajectory.append((state, policy))
 
         return trajectory, result

@@ -6,9 +6,11 @@ import copy
 import argparse
 from tqdm import tqdm
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, MofNCompleteColumn, TimeElapsedColumn
+from pathlib import Path
 
 
 from game.env import TicTacToe
+from game.rules import RULES_REGISTRY
 from core.tree import NetworkMCTS
 from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
@@ -27,21 +29,25 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
         self.network = network
+        self.game = game
         self.batch_size = batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
         self.early_stopping = early_stopping
 
-        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
+        network = PolicyValueNetwork(RULES_REGISTRY[game]) if network is None else network
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
-    def generate(self, num_games=10):
-        for _ in range(num_games):
+    def generate(self):
+        num_generate = max(1, self.batch_size // 5)
+
+        for _ in range(num_generate):
             trajectory, z = self.generator.generate()
             self.replay_buffer.add(trajectory, z)
 
@@ -103,7 +109,7 @@ class Pipeline:
                 # LR scheduling
                 self.trainer.scheduler.step()
 
-        self.save(f"checkpoints/{path}.pt")
+        self.save(path)
 
         print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --path {path}`")
 
@@ -113,7 +119,8 @@ class Pipeline:
         return copy.deepcopy(self.network)
     
     def save(self, path: str):
-        torch.save(self.network.state_dict(), path)
+        # mkdir if not exist
+        self.network.save(self.game, path)
 
     @staticmethod
     def load(network: PolicyValueNetwork, path: str) -> PolicyValueNetwork:
@@ -145,14 +152,24 @@ class Pipeline:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
     parser.add_argument("--path", type=str, help="network you want to load", default="version_2")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=500)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=64)
+    parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=1000)
+
 
     args = parser.parse_args()
 
-    network = PolicyValueNetwork()
-    pipeline = Pipeline(network, iterations=args.iterations, steps_per_iter=args.steps_per_iter, batch_size=args.batch_size)
+    network = PolicyValueNetwork(rules=RULES_REGISTRY[args.game])
+    pipeline = Pipeline(
+        network=network,
+        game=args.game, 
+        iterations=args.iterations, 
+        steps_per_iter=args.steps_per_iter, 
+        batch_size=args.batch_size, 
+        num_mcts_rollout=args.num_rollout,
+    )
 
     pipeline.train(args.path)

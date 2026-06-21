@@ -1,8 +1,12 @@
 from abc import ABC, abstractmethod
 import random
 
+import chess
+
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
+from game.rules import RULES_REGISTRY, int_to_move, move_to_int
+from game.helper import *
 
 class Player(ABC):
     def __init__(self):
@@ -42,14 +46,44 @@ class HumanPlayer(Player):
     def reset(self):
         self.env.reset()
 
+    def _format_legal_actions(self, legal_action, state):
+        """
+        Human-readable display for the legal action list. Chess gets UCI
+        notation (e.g. "e2e4") via int_to_move; any other game (e.g.
+        TicTacToe) falls back to the raw integers, since int_to_move only
+        makes sense for chess's move-encoding scheme.
+        """
+        if isinstance(state, chess.Board):
+            return [str(int_to_move(a, state)) for a in legal_action]
+        return legal_action
+
+    def _parse_input(self, raw, state):
+        """
+        Converts what the human typed back into an action int. Chess
+        accepts UCI notation ("e2e4") via move_to_int; any other game
+        expects a raw integer, same as before.
+        """
+        if isinstance(state, chess.Board):
+            move = chess.Move.from_uci(raw)
+            return move_to_int(move)
+        return int(raw)
+
     def select_action(self):
+        legal_action = self.env.get_legal_actions()
+        state = self.env.state
+        display = self._format_legal_actions(legal_action, state)
+
         legal = False
-        legal_action = self.env.get_legal_actions_self()
-
         while not legal:
-            action = int(input(f"Your turn({'X' if self.side == -1 else 'O'})! Input your action({legal_action}): "))
-
-            legal = action in legal_action
+            print(f"Legal moves: {display}")
+            raw = input(f"Your turn({'X' if self.side == -1 else 'O'}): ")
+            try:
+                action = self._parse_input(raw, state)
+                legal = action in legal_action
+            except (ValueError, chess.InvalidMoveError):
+                legal = False
+            if not legal:
+                print("Invalid input, try again.")
 
         return action
 
@@ -60,9 +94,9 @@ class HumanPlayer(Player):
         return None
 
 class NetworkMCTSPlayer(Player):
-    def __init__(self, network: PolicyValueNetwork):
+    def __init__(self, network: PolicyValueNetwork, game: str):
         super().__init__()
-        self.mcts = NetworkMCTS(network, epsilon=0)
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], epsilon=0)
         self.is_bot = True
 
     def reset(self):
@@ -115,7 +149,7 @@ class RandomPlayer(Player):
         return None
 
     def select_action(self):
-        legal_action = self.env.get_legal_actions_self()
+        legal_action = self.env.get_legal_actions()
         random_action = random.choice(legal_action)
 
         return random_action
