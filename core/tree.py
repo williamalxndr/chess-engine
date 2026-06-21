@@ -208,7 +208,7 @@ class VanillaMCTS(BaseMCTS):
     def u(self, node: "Node"):
         if node._visit_count == 0:
             return float("inf")
-        return node.q() + self.exploration_constant * math.sqrt(
+        return self.exploration_constant * math.sqrt(
             np.log(node.parent._visit_count) / node._visit_count
         )
 
