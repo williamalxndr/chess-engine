@@ -1,13 +1,12 @@
-
+import time
 import numpy as np
 import torch
 from torch import optim
 import copy
 import argparse
 from tqdm import tqdm
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, MofNCompleteColumn, TimeElapsedColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
 from pathlib import Path
-
 
 from game.env import TicTacToe
 from game.rules import RULES_REGISTRY
@@ -62,23 +61,40 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, path="example"):        
+    def train(self, path="example", duration_hours=None):        
         min_loss = float('inf')   
         not_improving = 0        
+        start_time = time.time()
+        duration_seconds = duration_hours * 3600 if duration_hours else None
 
         with Progress(
             TextColumn("{task.description}"),
             BarColumn(),
-            MofNCompleteColumn(),
+            TaskProgressColumn(),
             TextColumn("•"),
             TimeElapsedColumn(),
-            TextColumn("• eta:"),
-            TimeRemainingColumn(),
             transient=False,
         ) as progress:
-            task = progress.add_task("loss: 0.0000 | policy loss: 0.0000 | value loss: 0.0000", total=self.iterations)
+            total_target = duration_seconds if duration_seconds else self.iterations
+            
+            initial_desc = "loss: 0.0000 | policy loss: 0.0000 | value loss: 0.0000"
+            if duration_seconds:
+                initial_desc = f"Time left: {duration_hours:.2f}h | " + initial_desc
+                
+            task = progress.add_task(
+                initial_desc, 
+                total=total_target
+            )
 
-            for _ in range(self.iterations):
+            iteration = 0
+            while True:
+                current_time = time.time()
+                if duration_seconds and (current_time - start_time) >= duration_seconds:
+                    progress.update(task, completed=duration_seconds)
+                    break
+                if not duration_seconds and iteration >= self.iterations:
+                    break
+
                 # Generate self play data, if batch size is greater then the size of replay buffer stored then generate again
                 self.generate()
                 while len(self.replay_buffer) < self.batch_size:
@@ -100,14 +116,20 @@ class Pipeline:
                     
                 # Progress bar display
                 patience_str = f" | ⚠ patience: {not_improving}/{self.early_stopping}" if not_improving > self.early_stopping * 0.5 else ""
-                progress.update(
-                    task,
-                    advance=1,
-                    description=f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
-                )
+                
+                desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
+                
+                if duration_seconds:
+                    current_time = time.time()
+                    remaining = max(0, duration_seconds - (current_time - start_time))
+                    desc = f"Time left: {remaining/3600:.2f}h | " + desc
+                    progress.update(task, completed=(current_time - start_time), description=desc)
+                else:
+                    progress.update(task, advance=1, description=desc)
 
                 # LR scheduling
                 self.trainer.scheduler.step()
+                iteration += 1
 
         self.save(path)
 
@@ -158,6 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
+    parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
 
     args = parser.parse_args()
 
@@ -171,7 +194,6 @@ if __name__ == "__main__":
         # Create a new network if it doesn't exist yet
         network = NetworkFactory.create(args.game)
 
-
     pipeline = Pipeline(
         network=network,
         game=args.game, 
@@ -181,4 +203,4 @@ if __name__ == "__main__":
         num_mcts_rollout=args.num_rollout,
     )
 
-    pipeline.train(args.path)
+    pipeline.train(args.path, duration_hours=args.duration if args.duration > 0 else None)
