@@ -10,7 +10,7 @@ class Node:
     Holds a game state and the statistics gathered for it during search.
     """
 
-    def __init__(self, rules: Rules, state, parent=None, action=None):
+    def __init__(self, rules: Rules, state, parent=None, action=None, turn=None):
         self.rules = rules
         self.state = state
         self.parent = parent
@@ -20,7 +20,7 @@ class Node:
         self._value = 0.0
         self.prior = 0.0
         self.noise = 0.0
-        self.turn = rules.get_whose_turn(state)
+        self.turn = turn if turn is not None else (-1 if parent is None else -self.parent.turn)
         self.is_leaf = rules.is_terminal(state)
         self.result = rules.get_result(state)
         self.untried_actions = rules.get_legal_actions(state)
@@ -64,7 +64,7 @@ class Node:
                 (-1 if X wins, 1 if O wins, 0 if draw).
         """
         self.increment_visit()
-        value *= -self.turn      # value is seen from the parent's point of view
+        value *= -self.turn      # value is seen from the parent(opponent)'s point of view
         self._value += value
 
     def q(self):

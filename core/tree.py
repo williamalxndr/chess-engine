@@ -7,7 +7,7 @@ import torch
 
 from core.network import PolicyValueNetwork
 from game.env import Environment
-from game.rules import Rules, TicTacToeRules
+from game.rules import Rules, TicTacToeRules, ChessRules, int_to_move
 from core.node import Node
 
 
@@ -255,7 +255,7 @@ class NetworkMCTS(BaseMCTS):
         # For network MCTS, expand all children up front so priors can be assigned in one network call.
         while not selected_node.is_fully_expanded():
             untried_action = selected_node.untried_actions.pop()
-            expanded_state = self.rules.transition_state(selected_node.state, untried_action, selected_node.turn)
+            expanded_state = self.rules.transition_state(selected_node.state, untried_action)
             expanded_node = Node(self.rules, expanded_state, selected_node, untried_action)
             selected_node.add_child(expanded_node)
 
@@ -270,7 +270,7 @@ class NetworkMCTS(BaseMCTS):
             return selected_node.get_result()
 
         state = selected_node.state
-        torch_state = torch.from_numpy(state).float().unsqueeze(0).unsqueeze(0)
+        torch_state = torch.from_numpy(self.rules.encode(state)).unsqueeze(0)
         policy_head, value_head = self.network(torch_state)
 
         policy_head = policy_head.squeeze(0)
@@ -306,11 +306,11 @@ class NetworkMCTS(BaseMCTS):
 
 
 if __name__ == "__main__":
-    network = PolicyValueNetwork()
-    net_agent = NetworkMCTS(network=network, rules=TicTacToeRules(), num_rollout=1000)
-    vanilla_agent = VanillaMCTS(rules=TicTacToeRules(), num_rollout=1000)
+    network = PolicyValueNetwork(rules=ChessRules())
+    net_agent = NetworkMCTS(network=network, rules=ChessRules(), num_rollout=1000)
+    vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=1000)
 
-    best_action_net = net_agent.search()
+    best_action_net = int_to_move(net_agent.search())
     best_action_vanilla = vanilla_agent.search()
 
     print(best_action_net, best_action_vanilla)
