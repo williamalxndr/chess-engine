@@ -1,0 +1,6 @@
+import os
+
+LISTED_GAMES = ["tictactoe"]
+DEFAULT_NETWORK_PATH = "v1"
+SEED = 42
+NUM_ROLLOUT = 100
