@@ -6,6 +6,7 @@ import copy
 import argparse
 from tqdm import tqdm
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, MofNCompleteColumn, TimeElapsedColumn
+from pathlib import Path
 
 
 from game.env import TicTacToe
@@ -117,6 +118,10 @@ class Pipeline:
         return copy.deepcopy(self.network)
     
     def save(self, path: str):
+        # mkdir if not exist
+        dir_path = Path(path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+
         torch.save(self.network.state_dict(), path)
 
     @staticmethod
