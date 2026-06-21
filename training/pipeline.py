@@ -76,7 +76,7 @@ class Pipeline:
             TimeRemainingColumn(),
             transient=False,
         ) as progress:
-            task = progress.add_task("loss: 0.0000 | p_loss: 0.0000 | v_loss: 0.0000", total=self.iterations)
+            task = progress.add_task("loss: 0.0000 | policy loss: 0.0000 | value loss: 0.0000", total=self.iterations)
 
             for _ in range(self.iterations):
                 # Generate self play data, if batch size is greater then the size of replay buffer stored then generate again
@@ -153,16 +153,25 @@ class Pipeline:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
-    parser.add_argument("--path", type=str, help="path for saving the network", default="example")
+    parser.add_argument("--path", type=str, help="path for saving the network OR load network from", default="example")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=100)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
 
-
     args = parser.parse_args()
 
-    network = NetworkFactory.create(args.game)
+    # Verify the path points to an actual file
+    file_path = Path(f"checkpoints/{args.game}/{args.path}.pt")
+    if file_path.is_file():
+        # Load the network if it exist
+        network = PolicyValueNetwork.load(args.game, args.path)
+        print("network loaded")
+    else:
+        # Create a new network if it doesn't exist yet
+        network = NetworkFactory.create(args.game)
+
+
     pipeline = Pipeline(
         network=network,
         game=args.game, 
