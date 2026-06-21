@@ -4,6 +4,7 @@ from torch import nn
 import torch
 import math
 import torch.nn.functional as F
+from pathlib import Path
 
 from game.rules import Rules
 
@@ -37,22 +38,28 @@ class PolicyValueNetwork(nn.Module):
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
-    def save(self, path: str):
+    def save(self, game: str, path: str):
         """
         Saves weights together with the architecture metadata needed to
         reconstruct this network, so load() never needs an external rules
         argument. Only plain ints go into the checkpoint -- safe to load
         back with weights_only=True.
         """
+        fixed_path = f"checkpoints/{game}/{path}.pt"
+
+        # mkdir if not exists
+        dir_path = Path(fixed_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+
         torch.save({
             "state_dict": self.state_dict(),
             "action_space_size": self.action_space_size,
             "body_channels": self.body_channels,
-        }, f"checkpoints/{path}.pt")
+        }, fixed_path)
 
     @staticmethod
-    def load(path: str) -> "PolicyValueNetwork":
-        checkpoint = torch.load(f"checkpoints/{path}.pt", weights_only=True)
+    def load(game: str, path: str) -> "PolicyValueNetwork":
+        checkpoint = torch.load(f"checkpoints/{game}/{path}.pt", weights_only=True)
 
         rules_stub = SimpleNamespace(action_space_size=checkpoint["action_space_size"])
         network = PolicyValueNetwork(rules=rules_stub, body_channels=checkpoint["body_channels"])

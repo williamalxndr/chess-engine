@@ -31,6 +31,7 @@ class Pipeline:
     """
     def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
         self.network = network
+        self.game = game
         self.batch_size = batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
@@ -108,7 +109,7 @@ class Pipeline:
                 # LR scheduling
                 self.trainer.scheduler.step()
 
-        self.network.save(path)
+        self.save(path)
 
         print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --path {path}`")
 
@@ -119,10 +120,7 @@ class Pipeline:
     
     def save(self, path: str):
         # mkdir if not exist
-        dir_path = Path(path)
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-        torch.save(self.network.state_dict(), path)
+        self.network.save(self.game, path)
 
     @staticmethod
     def load(network: PolicyValueNetwork, path: str) -> PolicyValueNetwork:
