@@ -1,7 +1,8 @@
 import gym
 from abc import ABC, abstractmethod
+import chess
 
-from game.rules import Rules, TicTacToeRules
+from game.rules import Rules, TicTacToeRules, ChessRules
 
 
 class Environment(ABC):
@@ -42,8 +43,7 @@ class Environment(ABC):
         if action not in self.rules.get_legal_actions(self.state):
             raise ValueError("Action is illegal!")
 
-        current_player = self.rules.get_whose_turn(self.state)
-        self.state = self.rules.transition_state(self.state, action, current_player)
+        self.state = self.rules.transition_state(self.state, action)
 
         terminated = self.rules.is_terminal(self.state)
         result = self.rules.get_result(self.state) if terminated else None
@@ -62,11 +62,9 @@ class Environment(ABC):
         pass
 
 
-class TicTacToe(Environment, gym.Env):
+class TicTacToe(Environment):
     def __init__(self):
         super().__init__(rules=TicTacToeRules())
-        self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(3, 3), dtype=int)
-        self.action_space = gym.spaces.Discrete(9)
         self.reset()
 
     def render(self):
@@ -79,9 +77,13 @@ class TicTacToe(Environment, gym.Env):
             print('-' * 9)
 
 
-BASE_STATE = {
-    "tictactoe": TicTacToeRules().base_state(),
-}
+class Chess(Environment, gym.Env):
+    def __init__(self):
+        super().__init__(rules=ChessRules())
+        self.reset()
+
+    def render(self):
+        return NotImplemented
 
 
 if __name__ == "__main__":

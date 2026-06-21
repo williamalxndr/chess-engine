@@ -1,5 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
+import chess
+import math
 
 
 class IllegalBoardError(Exception):
@@ -9,99 +11,43 @@ class IllegalBoardError(Exception):
 
 
 class Rules(ABC):
-    """
-    Pure game mechanics for a given game type.
-
-    Every method takes an explicit `state` and never reads or mutates any
-    instance attribute, a Rules object holds no game-in-progress data of
-    its own. This is what lets one Rules instance be shared safely between
-    a live Environment session and a search algorithm (e.g. MCTS) that needs
-    to evaluate many candidate states at once, with zero ambiguity about
-    which state is being checked.
-    """
 
     @property
     @abstractmethod
     def action_space_size(self):
-        """
-        Returns:
-            int: total number of possible actions for this game 
-        """
         pass
 
     @abstractmethod
     def base_state(self):
-        """
-        Returns:
-            the empty/initial state for this game
-        """
         pass
 
     @abstractmethod
     def get_legal_actions(self, state):
-        """
-        Args:
-            state: game state to check
-
-        Returns:
-            list: legal actions
-        """
-        pass
-
-    @abstractmethod
-    def is_terminal(self, state):
-        """
-        Args:
-            state: game state to check
-
-        Returns:
-            bool: True if the game is over
-        """
-        pass
-
-    @abstractmethod
-    def get_result(self, state):
-        """
-        Args:
-            state: terminal game state
-
-        Returns:
-            result value (e.g. -1, 0, 1), or None if not terminal
-        """
         pass
 
     @abstractmethod
     def get_whose_turn(self, state):
-        """
-        Args:
-            state: game state to check
-
-        Returns:
-            player identifier
-        """
         pass
 
     @abstractmethod
-    def transition_state(self, state, action, player=None):
-        """
-        Args:
-            state: game state to apply the action to
-            action: action to apply
-            player: player making the move (optional, inferred if None)
+    def is_terminal(self, state):
+        pass
 
-        Returns:
-            new game state
-        """
+    @abstractmethod
+    def get_result(self, state):
+        pass
+
+    @abstractmethod
+    def transition_state(self, state, action):
+        pass
+
+    @abstractmethod
+    def encode(self, state) -> np.ndarray:
         pass
 
     def rollout(self, state):
-        """
-        Default uniform-random rollout from `state` to a terminal state.
-
-        Returns:
-            result of the simulated game
-        """
         state = state.copy()
+
         while not self.is_terminal(state):
             legal = self.get_legal_actions(state)
             action = np.random.choice(legal)
@@ -110,10 +56,6 @@ class Rules(ABC):
 
 
 class TicTacToeRules(Rules):
-    """
-    3x3 Tic-Tac-Toe rules. Board convention: -1 = X, 1 = O, 0 = empty.
-    X always moves first.
-    """
 
     @property
     def action_space_size(self):
@@ -129,9 +71,10 @@ class TicTacToeRules(Rules):
         o = counts_by_player.get(1, 0)
 
         if o == x:
-            return -1       # X's turn
+            return -1
         elif o + 1 == x:
-            return 1        # O's turn
+            return 1
+
         raise IllegalBoardError("Board is illegal: inconsistent turn counts")
 
     def get_legal_actions(self, state):
@@ -142,6 +85,7 @@ class TicTacToeRules(Rules):
             player = self.get_whose_turn(state)
 
         row, col = divmod(action, 3)
+
         if state[row, col] != 0:
             raise ValueError("That cell is already occupied")
 
@@ -161,11 +105,7 @@ class TicTacToeRules(Rules):
         return np.all(state != 0)
 
     def is_terminal(self, state):
-        return (
-            self.check_winner(state, -1)
-            or self.check_winner(state, 1)
-            or self.check_draw(state)
-        )
+        return self.check_winner(state, -1) or self.check_winner(state, 1) or self.check_draw(state)
 
     def get_result(self, state):
         if self.check_winner(state, -1):
@@ -188,10 +128,108 @@ class TicTacToeRules(Rules):
             return True
 
         raise IllegalBoardError("Board has inconsistent piece counts")
-    
+
+    def encode(self, state):
+        return state[np.newaxis, :, :].astype(np.float32)
 
 
-RULES_REGISTRY = {
-    "tictactoe": TicTacToeRules(),
-    "chess": NotImplemented
-}
+class ChessRules(Rules):
+    @property
+    def action_space_size(self):
+        return 4672
+
+    def base_state(self):
+        return chess.Board()
+
+    def get_legal_actions(self, board):
+        return [move_to_int(move) for move in board.legal_moves]
+
+    def get_whose_turn(self, board):
+        return -1 if board.turn else 1
+
+    def is_terminal(self, board):
+        return board.is_game_over()
+
+    def get_result(self, board):
+        RESULT_MAP = {"1-0": -1, "0-1": 1, "1/2-1/2": 0, "*": None}
+        return RESULT_MAP[board.result()]
+
+    def transition_state(self, board, action: int, player=None):
+        if action not in self.get_legal_actions(board):
+            raise ValueError("Illegal action")
+        board_copy = board.copy()
+        move = int_to_move(action, board_copy)
+        board_copy.push(move)
+        return board_copy
+
+    def encode(self, state: chess.Board):
+        return board_to_state(state)[np.newaxis, :, :].astype(np.float32)
+
+
+def board_to_state(board: chess.Board) -> np.ndarray:
+    state = np.zeros((8, 8), dtype=int)
+    for square in chess.SQUARES:
+        piece = board.piece_at(square)
+        if piece:
+            value = piece.piece_type
+            if piece.color == chess.BLACK:
+                value = -value
+            row = 7 - chess.square_rank(square)
+            col = chess.square_file(square)
+            state[row, col] = value
+    return state
+
+
+def move_to_int(move: chess.Move) -> int:
+    from_sq = move.from_square; to_sq = move.to_square; promo = move.promotion
+    from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
+    to_file = chess.square_file(to_sq); to_rank = chess.square_rank(to_sq)
+    dx = to_file - from_file; dy = to_rank - from_rank
+    if promo in [chess.KNIGHT, chess.BISHOP, chess.ROOK]:
+        direction = 0 if dx == 0 else (1 if dx > 0 else 2)
+        piece = 0
+        if promo == chess.BISHOP: piece = 1
+        elif promo == chess.ROOK: piece = 2
+        plane_index = 64 + (direction * 3) + piece
+    elif (abs(dx), abs(dy)) in [(1, 2), (2, 1)]:
+        knight_moves = [(1,2),(2,1),(2,-1),(1,-2),(-1,-2),(-2,-1),(-2,1),(-1,2)]
+        plane_index = 56 + knight_moves.index((dx, dy))
+    else:
+        sign_x = 0 if dx == 0 else int(math.copysign(1, dx))
+        sign_y = 0 if dy == 0 else int(math.copysign(1, dy))
+        queen_dir_map = {(0,1):0,(1,1):1,(1,0):2,(1,-1):3,(0,-1):4,(-1,-1):5,(-1,0):6,(-1,1):7}
+        direction = queen_dir_map[(sign_x, sign_y)]
+        distance = max(abs(dx), abs(dy))
+        plane_index = (direction * 7) + (distance - 1)
+    return (from_sq * 73) + plane_index
+
+
+def int_to_move(action: int, board: chess.Board = None) -> chess.Move:
+    from_sq = action // 73; plane_index = action % 73
+    from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
+    promo = None
+    if plane_index < 56:
+        direction = plane_index // 7; distance = (plane_index % 7) + 1
+        dir_map = [(0,1),(1,1),(1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1)]
+        dx, dy = dir_map[direction]
+        to_file = from_file + (dx*distance); to_rank = from_rank + (dy*distance)
+        if board and board.piece_at(from_sq):
+            if board.piece_at(from_sq).piece_type == chess.PAWN:
+                if to_rank == 0 or to_rank == 7:
+                    promo = chess.QUEEN
+    elif plane_index < 64:
+        knight_moves = [(1,2),(2,1),(2,-1),(1,-2),(-1,-2),(-2,-1),(-2,1),(-1,2)]
+        dx, dy = knight_moves[plane_index - 56]
+        to_file = from_file + dx; to_rank = from_rank + dy
+    else:
+        under_idx = plane_index - 64; direction = under_idx // 3; piece = under_idx % 3
+        promo_map = {0: chess.KNIGHT, 1: chess.BISHOP, 2: chess.ROOK}
+        promo = promo_map[piece]
+        dx = 0 if direction == 0 else (1 if direction == 1 else -1)
+        dy = 1 if from_rank == 6 else -1
+        to_file = from_file + dx; to_rank = from_rank + dy
+    to_sq = chess.square(to_file, to_rank)
+    return chess.Move(from_sq, to_sq, promotion=promo)
+
+
+RULES_REGISTRY = {"tictactoe": TicTacToeRules(), "chess": ChessRules()}
