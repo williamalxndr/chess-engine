@@ -157,10 +157,19 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=500)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=64)
+    parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=1000)
+
 
     args = parser.parse_args()
 
     network = PolicyValueNetwork(rules=RULES_REGISTRY[args.game])
-    pipeline = Pipeline(network, game=args.game, iterations=args.iterations, steps_per_iter=args.steps_per_iter, batch_size=args.batch_size)
+    pipeline = Pipeline(
+        network=network,
+        game=args.game, 
+        iterations=args.iterations, 
+        steps_per_iter=args.steps_per_iter, 
+        batch_size=args.batch_size, 
+        num_mcts_rollout=args.num_rollout,
+    )
 
     pipeline.train(args.path)

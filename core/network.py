@@ -2,7 +2,6 @@ from types import SimpleNamespace
 
 from torch import nn
 import torch
-import math
 import torch.nn.functional as F
 from pathlib import Path
 
@@ -12,10 +11,12 @@ from game.rules import Rules
 class PolicyValueNetwork(nn.Module):
     def __init__(self, rules: Rules, body_channels=16):
         super().__init__()
+        self.rules = rules
         self.action_space_size = rules.action_space_size
+        self.in_channels = rules.encoded_channels
         self.body_channels = body_channels
 
-        self.body = ResidualBlock(1, body_channels, 2, 1, 1)
+        self.body = ResidualBlock(self.in_channels, body_channels, 2, 1, 1)
         self.policy_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
@@ -32,7 +33,7 @@ class PolicyValueNetwork(nn.Module):
     def forward(self, x):
         """
         Args:
-            x (np.ndarray): input data (board) with shape (3,3)
+            x: (B, in_channels, H, W)
         Returns policy_head, value_head
         """
         features = self.body(x)
@@ -45,15 +46,15 @@ class PolicyValueNetwork(nn.Module):
         argument. Only plain ints go into the checkpoint -- safe to load
         back with weights_only=True.
         """
-        fixed_path = f"checkpoints/{game}/{path}.pt"
+        dir_path = f"checkpoints/{game}"
+        fixed_path = f"{dir_path}/{path}.pt"
 
-        # mkdir if not exists
-        dir_path = Path(fixed_path)
-        dir_path.mkdir(parents=True, exist_ok=True)
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
 
         torch.save({
             "state_dict": self.state_dict(),
             "action_space_size": self.action_space_size,
+            "in_channels": self.in_channels,
             "body_channels": self.body_channels,
         }, fixed_path)
 
@@ -61,7 +62,10 @@ class PolicyValueNetwork(nn.Module):
     def load(game: str, path: str) -> "PolicyValueNetwork":
         checkpoint = torch.load(f"checkpoints/{game}/{path}.pt", weights_only=True)
 
-        rules_stub = SimpleNamespace(action_space_size=checkpoint["action_space_size"])
+        rules_stub = SimpleNamespace(
+            action_space_size=checkpoint["action_space_size"],
+            encoded_channels=checkpoint["in_channels"],
+        )
         network = PolicyValueNetwork(rules=rules_stub, body_channels=checkpoint["body_channels"])
         network.load_state_dict(checkpoint["state_dict"])
         return network
@@ -76,14 +80,12 @@ class ResidualBlock(nn.Module):
         self.stride = stride
         self.padding = padding
 
-        # Layers
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
         self.norm1 = nn.GroupNorm(out_channels, out_channels)
         self.relu1 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding)
         self.norm2 = nn.GroupNorm(out_channels, out_channels)
 
-        # Automatically creates a downsample
         if in_channels != out_channels:
             self.channel_proj = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
 
