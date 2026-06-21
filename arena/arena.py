@@ -43,7 +43,6 @@ class Arena:
         self.env = env
 
     def _animate_thinking(self, stop_event):
-        """Berjalan di background thread, berhenti saat stop_event di-set."""
         dots = ["   ", ".  ", ".. ", "..."]
         i = 0
         while not stop_event.is_set():

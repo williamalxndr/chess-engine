@@ -76,7 +76,7 @@ class HumanPlayer(Player):
         legal = False
         while not legal:
             print(f"Legal moves: {display}")
-            raw = input(f"Your turn({'X' if self.side == -1 else 'O'}): ")
+            raw = input(f"Your turn: ")
             try:
                 action = self._parse_input(raw, state)
                 legal = action in legal_action
