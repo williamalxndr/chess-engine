@@ -149,6 +149,7 @@ class Pipeline:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
     parser.add_argument("--path", type=str, help="network you want to load", default="version_2")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=500)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
@@ -156,7 +157,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    network = PolicyValueNetwork(RULES_REGISTRY["tictactoe"])
-    pipeline = Pipeline(network, iterations=args.iterations, steps_per_iter=args.steps_per_iter, batch_size=args.batch_size)
+    network = PolicyValueNetwork(rules=RULES_REGISTRY[args.game])
+    pipeline = Pipeline(network, game=args.game, iterations=args.iterations, steps_per_iter=args.steps_per_iter, batch_size=args.batch_size)
 
     pipeline.train(args.path)

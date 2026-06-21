@@ -83,7 +83,7 @@ class Chess(Environment, gym.Env):
         self.reset()
 
     def render(self):
-        return NotImplemented
+        raise NotImplementedError
 
 
 if __name__ == "__main__":

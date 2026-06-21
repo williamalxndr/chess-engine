@@ -69,8 +69,10 @@ class Generator:
         game_over = False
         while not game_over:
             state, policy, game_over, result = self.make_move()
+            print(f"state, policy, game_over: {state, policy, game_over}")
             trajectory.append((state, policy))
 
+        print("done")
         return trajectory, result
         
         

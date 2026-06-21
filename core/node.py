@@ -10,35 +10,45 @@ class Node:
     Holds a game state and the statistics gathered for it during search.
     """
 
-    def __init__(self, rules: Rules, state, parent=None, action=None, turn=None):
+    def __init__(self, rules: Rules, state, parent=None, action=None):
         self.rules = rules
         self.state = state
         self.parent = parent
         self.action = action
-        self.children = []
+        self.children = {}             # dict action: node
         self._visit_count = 0
         self._value = 0.0
-        self.prior = 0.0
-        self.noise = 0.0
-        self.turn = turn if turn is not None else (-1 if parent is None else -self.parent.turn)
+        self.priors = {}
+        self.noise = {}
+        self.turn = rules.get_whose_turn(state)
         self.is_leaf = rules.is_terminal(state)
         self.result = rules.get_result(state)
         self.untried_actions = rules.get_legal_actions(state)
 
-    def add_child(self, child: "Node"):
+    def add_child(self, child: "Node", action):
         """
         Append child to this node's children.
         """
-        self.children.append(child)
+        child.action = action
+        self.children[action] = child
 
     def add_child_by_action(self, action: int):
-        if action not in self.rules.get_legal_actions(self.state):
+        if action not in self.get_legal_actions():
             raise ValueError("Action is illegal in the current state")
 
         child_state = self.rules.transition_state(self.state, action)
         child_node = Node(self.rules, child_state, self, action)
-        self.add_child(child_node)
+        self.add_child(child_node, action)
         return child_node
+    
+    def get_children_by_action(self, action) -> "Node":        
+        return self.children.get(action)
+    
+    def get_legal_actions(self):
+        return self.rules.get_legal_actions(self.state)
+    
+    def get_untried_action(self):
+        return self.untried_actions.pop()
 
     def get_leaf(self):
         return self.is_leaf
