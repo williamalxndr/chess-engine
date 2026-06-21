@@ -28,13 +28,14 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, early_stopping=50):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, early_stopping=50, verbose=False):
         self.network = network
         self.game = game
         self.batch_size = batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
         self.early_stopping = early_stopping
+        self.verbose = verbose
 
         network = PolicyValueNetwork(RULES_REGISTRY[game]) if network is None else network
         self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
@@ -74,6 +75,7 @@ class Pipeline:
             TextColumn("•"),
             TimeElapsedColumn(),
             transient=False,
+            disable=not self.verbose,
         ) as progress:
             total_target = duration_seconds if duration_seconds else self.iterations
             
@@ -90,7 +92,8 @@ class Pipeline:
             while True:
                 current_time = time.time()
                 if duration_seconds and (current_time - start_time) >= duration_seconds:
-                    progress.update(task, completed=duration_seconds)
+                    if self.verbose:
+                        progress.update(task, completed=duration_seconds)
                     break
                 if not duration_seconds and iteration >= self.iterations:
                     break
@@ -115,17 +118,17 @@ class Pipeline:
                     break
                     
                 # Progress bar display
-                patience_str = f" | ⚠ patience: {not_improving}/{self.early_stopping}" if not_improving > self.early_stopping * 0.5 else ""
-                
-                desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
-                
-                if duration_seconds:
-                    current_time = time.time()
-                    remaining = max(0, duration_seconds - (current_time - start_time))
-                    desc = f"Time left: {remaining/3600:.2f}h | " + desc
-                    progress.update(task, completed=(current_time - start_time), description=desc)
-                else:
-                    progress.update(task, advance=1, description=desc)
+                if self.verbose:
+                    patience_str = f" | ⚠ patience: {not_improving}/{self.early_stopping}" if not_improving > self.early_stopping * 0.5 else ""
+                    desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
+                    
+                    if duration_seconds:
+                        current_time = time.time()
+                        remaining = max(0, duration_seconds - (current_time - start_time))
+                        desc = f"Time left: {remaining/3600:.2f}h | " + desc
+                        progress.update(task, completed=(current_time - start_time), description=desc)
+                    else:
+                        progress.update(task, advance=1, description=desc)
 
                 # LR scheduling
                 self.trainer.scheduler.step()
@@ -133,7 +136,8 @@ class Pipeline:
 
         self.save(path)
 
-        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
+        if self.verbose:
+            print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
 
         return self.get_network()
 
@@ -164,12 +168,13 @@ class Pipeline:
 
         results = self.arena.play(num_games)
 
-        player_1_win = results[id(player_1)] / num_games
-        player_2_win = results[id(player_2)] / num_games
+        if self.verbose:
+            player_1_win = results[id(player_1)] / num_games
+            player_2_win = results[id(player_2)] / num_games
 
-        print(results)
-        print(f"player_1_win: {player_1_win}")
-        print(f"player_2_win: {player_2_win}")
+            print(results)
+            print(f"player_1_win: {player_1_win}")
+            print(f"player_2_win: {player_2_win}")
 
 
 if __name__ == "__main__":
@@ -181,6 +186,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
     args = parser.parse_args()
 
@@ -189,7 +195,8 @@ if __name__ == "__main__":
     if file_path.is_file():
         # Load the network if it exist
         network = PolicyValueNetwork.load(args.game, args.path)
-        print("network loaded")
+        if args.verbose:
+            print("network loaded")
     else:
         # Create a new network if it doesn't exist yet
         network = NetworkFactory.create(args.game)
@@ -201,6 +208,7 @@ if __name__ == "__main__":
         steps_per_iter=args.steps_per_iter, 
         batch_size=args.batch_size, 
         num_mcts_rollout=args.num_rollout,
+        verbose=args.verbose,
     )
 
     pipeline.train(args.path, duration_hours=args.duration if args.duration > 0 else None)
