@@ -66,7 +66,10 @@ class Pipeline:
         min_loss = float('inf')   
         not_improving = 0        
         start_time = time.time()
+        last_log_time = start_time
+        log_interval = 600
         duration_seconds = duration_hours * 3600 if duration_hours else None
+        loss = policy_loss = v_loss = 0.0
 
         with Progress(
             TextColumn("{task.description}"),
@@ -116,14 +119,29 @@ class Pipeline:
 
                 if not_improving >= self.early_stopping:
                     break
+                
+                current_time = time.time()
+                if current_time - last_log_time >= log_interval:
+                    elapsed = current_time - start_time
+                    if duration_seconds:
+                        rem = max(0, duration_seconds - elapsed)
+                        msg = f"[Time Update] {elapsed/60:.0f}m elapsed | {rem/60:.0f}m remaining | loss: {loss:.4f}"
+                    else:
+                        msg = f"[Time Update] {elapsed/60:.0f}m elapsed | iteration: {iteration+1} | loss: {loss:.4f}"
                     
+                    if self.verbose:
+                        progress.console.print(msg)
+                    else:
+                        print(f"\r{msg:<80}", end="", flush=True)
+                    
+                    last_log_time = current_time
+
                 # Progress bar display
                 if self.verbose:
                     patience_str = f" | ⚠ patience: {not_improving}/{self.early_stopping}" if not_improving > self.early_stopping * 0.5 else ""
                     desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
                     
                     if duration_seconds:
-                        current_time = time.time()
                         remaining = max(0, duration_seconds - (current_time - start_time))
                         desc = f"Time left: {remaining/3600:.2f}h | " + desc
                         progress.update(task, completed=(current_time - start_time), description=desc)
@@ -135,6 +153,9 @@ class Pipeline:
                 iteration += 1
 
         self.save(path)
+
+        if not self.verbose:
+            print()
 
         if self.verbose:
             print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
@@ -186,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output")
 
     args = parser.parse_args()
 
