@@ -153,7 +153,7 @@ class Pipeline:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
-    parser.add_argument("--path", type=str, help="network you want to load", default="version_2")
+    parser.add_argument("--path", type=str, help="path for saving the network", default="version_2")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=500)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=64)

@@ -1,5 +1,4 @@
 numpy
-gym
 torch
 rich
 python-chess

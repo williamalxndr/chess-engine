@@ -157,6 +157,13 @@ class ChessRules(Rules):
         return board_copy
 
     def encode(self, state):
+        """
+        Args:
+            chess.Board
+        
+        Returns:
+            np.ndarray: with size (21, 8, 8)
+        """
         return encode_chess_state(state).astype(np.float32)
 
 

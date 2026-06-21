@@ -1,6 +1,4 @@
-import gym
 from abc import ABC, abstractmethod
-import chess
 
 from game.rules import Rules, TicTacToeRules, ChessRules
 
@@ -77,7 +75,7 @@ class TicTacToe(Environment):
             print('-' * 9)
 
 
-class Chess(Environment, gym.Env):
+class Chess(Environment):
     def __init__(self):
         super().__init__(rules=ChessRules())
         self.reset()
