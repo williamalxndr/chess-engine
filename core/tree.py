@@ -1,4 +1,3 @@
-import copy
 import math
 from abc import ABC, abstractmethod
 
@@ -7,7 +6,7 @@ import torch
 
 from core.network import PolicyValueNetwork
 from game.env import Environment
-from game.rules import Rules, TicTacToeRules, ChessRules, int_to_move
+from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
 
 
@@ -56,119 +55,108 @@ class BaseMCTS(ABC):
         return self.q(node, action) + self.u(node, action)   # mean value (q) + exploration (u)
 
     def q(self, node: Node, action: int):
-        """
-        Q(S, A)
-        """
-        child = node.get_children_by_action(action)
+        """Q(S, A)"""
+        child = node.children.get(action)
         if child is None:
             return 0
         return child.q()
 
     @abstractmethod
     def u(self, node: Node, action: int):
+        """U(S, A)"""
+        pass
+
+    def best_action(self, node: Node):
+        legal_actions = node.get_legal_actions()
+        return max(legal_actions, key=lambda a: self.score(node, a))
+
+    @abstractmethod
+    def _has_been_expanded(self, node: Node) -> bool:
         """
-        U(S, A)
+        Whether `node` is "ready" for PUCT-based descent into its children
+        (VanillaMCTS: all untried actions consumed. NetworkMCTS: node has
+        been evaluated by the network, so it has priors).
         """
         pass
 
-    def best_child(self, node: Node):
-        """
-        Determine the best child to descend to based on the scoring method.
-        """
-        legal_actions = node.get_legal_actions()
-        best_action = max(legal_actions, key=lambda a: self.score(node, a))
-        child = node.children.get(best_action)
-
-        if child is None:
-            child = self.expand(node, best_action)
-
-        return child
-
     def select(self):
         """
-        Descend the tree picking the best child until an unexpanded or
-        terminal node is reached.
+        Descend the tree.
 
         Returns:
-            Node: the node to expand next
+            (node, action): the edge that needs expand_and_evaluate().
+            `action` is None if `node` itself is what needs evaluating
+            (a fresh/never-evaluated node, or a terminal node).
         """
-        selected_node = self.observed
-        while selected_node.is_fully_expanded() and not selected_node.get_leaf():
-            selected_node = self.best_child(selected_node)
-        return selected_node
-    
+        node = self.observed
+        while self._has_been_expanded(node) and not node.get_leaf():
+            action = self.best_action(node)
+            child = node.children.get(action)
+            if child is None:
+                return node, action
+            node = child
+        return node, None
+
     def expand(self, node: Node, action=None):
+        """
+        Materialize ONE child for `action` (or an arbitrary untried action
+        if none given) and attach it to `node`.
+        """
         if node.get_leaf():
             return node
         
         if action is None:
             action = node.get_untried_action()
-        
-        child_state = self.rules.transition_state(node.state, action)
-        expanded_node = Node(self.rules, child_state, node)
-        node.add_child(expanded_node, action)
+        else:
+            node.untried_actions = [a for a in node.untried_actions if a != action]
 
+        child_state = self.rules.transition_state(node.state, action)
+        expanded_node = Node(self.rules, child_state, node, action)
+        node.add_child(expanded_node, action)
         return expanded_node
 
-        
     @abstractmethod
     def evaluate(self, node: Node):
         """
-        Evaluate how good a node is
-
-        Args:
-            node (Node)
+        Evaluate how good a node is.
 
         Returns:
-            int: absolute value (-1 for the first player to move, 1 for the second player to move)
+            float: absolute value
         """
         pass
 
     @abstractmethod
-    def expand_and_evaluate(self, selected_node):
+    def expand_and_evaluate(self, node: Node, action):
         """
-        Expand one child then evaluate how good is that node
-
         Args:
-            selected_node (Node)
+            node (Node): node returned by select()
+            action (int or None): edge to materialize, or None if `node`
+                itself is what needs evaluating
 
         Returns:
             (node_to_backpropagate_from, reward)
         """
         pass
 
-
     def backpropagate(self, node: Node, reward):
-        """
-        Update the value of every node on the path back to the root.
-
-        Args:
-            reward: reward from the simulation step.
-        """
         while node is not None:
             node.update(reward)
             node = node.parent
 
     def search(self):
-        """
-        Run `num_rollout` simulations and return the best action found.
-        """
         self._apply_root_noise()
 
         for _ in range(self.num_rollout):
-            selected_node = self.select()                               # Selection
-            node, reward = self.expand_and_evaluate(selected_node)      # Expansion and evaluation
-            self.backpropagate(node, reward)                            # Backpropagation
+            selected_node, action = self.select()
+            node, reward = self.expand_and_evaluate(selected_node, action)
+            self.backpropagate(node, reward)
 
         return self.get_best_action()
 
     def get_child_visit_count(self) -> np.ndarray:
-        """
-        Returns the visit-count array for the currently observed node.
-        """
         counts = np.zeros(self.rules.action_space_size)
-        for ch in self.observed.children:
-            counts[ch.action] = ch._visit_count
+        for action, child in self.observed.children.items():
+            counts[action] = child._visit_count
         return counts
 
     def get_best_action(self):
@@ -190,23 +178,12 @@ class BaseMCTS(ABC):
         return counts / total
 
     def advance(self, action, do_step=True):
-        """
-        Move `self.observed` forward by `action`, expanding the tree if
-        needed. If an `env` is attached and `do_step` is True, the live
-        session is advanced too.
-
-        Returns:
-            is_leaf, result
-            is_leaf (bool): True if the resulting state is terminal
-            result (None/int): None if the game is still going, otherwise
-                the result (-1/1/0)
-        """
-        for child in self.observed.children:
-            if child.action == action:
-                if do_step and self.env is not None:
-                    self.env.step(action)
-                self.observed = child
-                return self.observed.get_leaf(), self.observed.get_result()
+        child = self.observed.get_children_by_action(action)
+        if child is not None:
+            if do_step and self.env is not None:
+                self.env.step(action)
+            self.observed = child
+            return self.observed.get_leaf(), self.observed.get_result()
 
         if action in self.rules.get_legal_actions(self.observed.state):
             self.observed.add_child_by_action(action)
@@ -219,9 +196,6 @@ class BaseMCTS(ABC):
         pass
 
     def get_current_state(self):
-        """
-        Returns a copy of the currently observed state.
-        """
         return self.observed.state.copy()
 
     def log(self, msg):
@@ -235,24 +209,27 @@ class VanillaMCTS(BaseMCTS):
         super().__init__(rules, env, num_rollout, verbose, seed)
         self.exploration_constant = exploration_constant
 
+    def _has_been_expanded(self, node: Node) -> bool:
+        return node.is_fully_expanded()
+
     def u(self, node: Node, action: int):
         child = node.get_children_by_action(action)
+        
         if child is None or child._visit_count == 0:
             return float("inf")
         
         return self.exploration_constant * math.sqrt(
-            np.log(node._visit_count) / child._visit_count
+            math.log(node._visit_count) / child._visit_count
         )
 
     def evaluate(self, expanded_node: Node):
         if expanded_node.get_leaf():
             return expanded_node.result
         return self.rules.rollout(expanded_node.state)
-    
-    def expand_and_evaluate(self, selected_node):
-        expanded_node = self.expand(selected_node)
-        value = self.evaluate(expanded_node)
-        return expanded_node, value
+
+    def expand_and_evaluate(self, node: Node, action):
+        expanded_node = self.expand(node, action)
+        return expanded_node, self.evaluate(expanded_node)
 
     def _apply_root_noise(self):
         return
@@ -269,59 +246,69 @@ class NetworkMCTS(BaseMCTS):
         self.epsilon = epsilon if add_noise else 0
         self.alpha = alpha
 
+    def _has_been_expanded(self, node: Node) -> bool:
+        return bool(node.priors)
+
     def u(self, node: Node, action: int):
-        child = node.get_children_by_action(action)
-        return self.c_puct * self.p(node) * math.sqrt(node.parent._visit_count) / (1 + node._visit_count)
+        child = node.children.get(action)
+        n_action = child._visit_count if child is not None else 0
+        return self.c_puct * self.p(node, action) * math.sqrt(node._visit_count) / (1 + n_action)
 
-    def p(self, node: Node):
-        return (1 - self.epsilon) * node.prior + self.epsilon * node.noise
-    
+    def p(self, node: Node, action: int):
+        prior = node.priors.get(action, 0)
+        noise = node.noise.get(action, 0)
+        return (1 - self.epsilon) * prior + self.epsilon * noise
+
     def forward_network(self, node: Node):
-        """
-        Returns policy_head, value_head
-        """
+        """Returns policy_head, value_head"""
         encoded_state = self.rules.encode(node.state)
-        torch_state = torch.from_numpy(encoded_state)
+        torch_state = torch.from_numpy(encoded_state).float()
+ 
+        if torch_state.ndim == 2:          # (H, W) -> single channel, single state
+            torch_state = torch_state.unsqueeze(0).unsqueeze(0)
+        elif torch_state.ndim == 3:        # (C, H, W) -> single state
+            torch_state = torch_state.unsqueeze(0)
+        elif torch_state.ndim == 4:        # (B, C, H, W) -> already batched
+            pass
+        else:
+            raise ValueError(
+                f"encode() returned unexpected shape {tuple(torch_state.shape)} -- "
+                f"expected (H,W), (C,H,W), or (B,C,H,W)"
+            )
+ 
         return self.network(torch_state)
-
     def evaluate(self, node: Node):
         if node.get_leaf():
             return node.get_result()
 
         policy_head, value_head = self.forward_network(node)
+        policy_head = policy_head.squeeze(0)
+        value_head = value_head.item()
 
         legal_actions = node.get_legal_actions()
-        
-        # masking (0 for the illegal action)
         mask = np.ones(policy_head.shape, dtype=bool)
         mask[legal_actions] = False
         policy_head[mask] = 0
         policy_head = policy_head / torch.sum(policy_head)
 
         node.priors = {a: policy_head[a].item() for a in legal_actions}
-
         return value_head
-        
-    def expand_and_evaluate(self, node: Node):
+
+    def expand_and_evaluate(self, node: Node, action):
+        if action is not None:
+            node = self.expand(node, action)
+
         if node.get_leaf():
-            return node, node.ge_result()
-        
+            return node, node.get_result()
+
         reward = self.evaluate(node)
-
-        priors = node.priors
-        best_action = max(priors, key=priors.get)
-
-        expanded_node = self.expand(node, best_action)
-
-        return expanded_node, reward
-        
+        return node, reward
 
     def _apply_root_noise(self):
         if self.epsilon == 0:
             return
 
         root = self.observed
-
         if not root.priors:
             self.evaluate(root)
 
@@ -329,13 +316,14 @@ class NetworkMCTS(BaseMCTS):
         noise = self.rng.dirichlet([self.alpha] * len(legal_actions))
         root.noise = {a: noise[i] for i, a in enumerate(legal_actions)}
 
+
 if __name__ == "__main__":
     network = PolicyValueNetwork(rules=ChessRules())
-    net_agent = NetworkMCTS(network=network, rules=ChessRules(), num_rollout=1000)
-    vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=1000)
+    net_agent = NetworkMCTS(network=network, rules=ChessRules(), num_rollout=100)
+    vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=10)
 
     best_action_net = int_to_move(net_agent.search())
-    best_action_vanilla = vanilla_agent.search()
+    best_action_vanilla = int_to_move(vanilla_agent.search())
 
     print(best_action_net, best_action_vanilla)
     
