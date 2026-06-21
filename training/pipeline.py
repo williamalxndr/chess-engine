@@ -12,7 +12,7 @@ from pathlib import Path
 from game.env import TicTacToe
 from game.rules import RULES_REGISTRY
 from core.tree import NetworkMCTS
-from core.network import PolicyValueNetwork
+from core.network import PolicyValueNetwork, NetworkFactory
 from selfplay.replay_buffer import ReplayBuffer
 from selfplay.generator import Generator
 from training.trainer import Trainer
@@ -29,7 +29,7 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=64, max_size=10000, seed=42, iterations=200, num_mcts_rollout=1000, steps_per_iter=200, early_stopping=50):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, early_stopping=50):
         self.network = network
         self.game = game
         self.batch_size = batch_size
@@ -62,7 +62,7 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, path="version_1"):        
+    def train(self, path="example"):        
         min_loss = float('inf')   
         not_improving = 0        
 
@@ -111,7 +111,7 @@ class Pipeline:
 
         self.save(path)
 
-        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --path {path}`")
+        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
 
         return self.get_network()
 
@@ -153,16 +153,16 @@ class Pipeline:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
-    parser.add_argument("--path", type=str, help="path for saving the network", default="version_2")
-    parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=500)
+    parser.add_argument("--path", type=str, help="path for saving the network", default="example")
+    parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=100)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
-    parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=64)
-    parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=1000)
+    parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
+    parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
 
 
     args = parser.parse_args()
 
-    network = PolicyValueNetwork(rules=RULES_REGISTRY[args.game])
+    network = NetworkFactory.create(args.game)
     pipeline = Pipeline(
         network=network,
         game=args.game, 

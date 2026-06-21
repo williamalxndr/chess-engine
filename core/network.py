@@ -4,31 +4,49 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 from pathlib import Path
+from abc import ABC, abstractmethod
 
-from game.rules import Rules
+from game.rules import Rules, TicTacToeRules, ChessRules
 
 
-class PolicyValueNetwork(nn.Module):
-    def __init__(self, rules: Rules, body_channels=16):
+class PolicyValueNetwork(nn.Module, ABC):
+    _registry = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        PolicyValueNetwork._registry[cls.__name__] = cls
+
+    def __init__(self, rules: Rules):
         super().__init__()
         self.rules = rules
         self.action_space_size = rules.action_space_size
         self.in_channels = rules.encoded_channels
-        self.body_channels = body_channels
+        self.body = self._build_body()
 
-        self.body = ResidualBlock(self.in_channels, body_channels, 2, 1, 1)
         self.policy_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(body_channels, rules.action_space_size),
+            nn.Linear(self.body_channels, rules.action_space_size),
             nn.Softmax(dim=1)
         )
         self.value_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(body_channels, 1),
+            nn.Linear(self.body_channels, 1),
             nn.Tanh()
         )
+
+    @abstractmethod
+    def _build_body(self): 
+        """
+        Define the body layers
+        """
+        pass
+        
+    @property
+    @abstractmethod
+    def body_channels(self):
+        pass
 
     def forward(self, x):
         """
@@ -55,7 +73,7 @@ class PolicyValueNetwork(nn.Module):
             "state_dict": self.state_dict(),
             "action_space_size": self.action_space_size,
             "in_channels": self.in_channels,
-            "body_channels": self.body_channels,
+            "class_name": self.__class__.__name__,
         }, fixed_path)
 
     @staticmethod
@@ -66,13 +84,61 @@ class PolicyValueNetwork(nn.Module):
             action_space_size=checkpoint["action_space_size"],
             encoded_channels=checkpoint["in_channels"],
         )
-        network = PolicyValueNetwork(rules=rules_stub, body_channels=checkpoint["body_channels"])
+
+        class_name = checkpoint["class_name"]
+
+        if class_name not in PolicyValueNetwork._registry:
+            raise ValueError(f"Network class '{class_name}' tidak terdaftar di registry. Pastikan class tersebut sudah di-import.")
+            
+        network_class = PolicyValueNetwork._registry[class_name]
+
+        network = network_class(rules=rules_stub)
         network.load_state_dict(checkpoint["state_dict"])
+
         return network
 
 
+class ChessNetwork(PolicyValueNetwork):
+    def __init__(self, rules: Rules):
+        super().__init__(rules)
+
+    def _build_body(self):
+        return nn.Sequential(
+            ResidualBlock(self.in_channels, 32, padding=1),
+            ResidualBlock(32, 64, padding=1),
+            ResidualBlock(64, 128, padding=1),
+            ResidualBlock(128, 256, padding=1),
+            ResidualBlock(256, 256, padding=1),
+            ResidualBlock(256, 256, padding=1),
+            ResidualBlock(256, 256, padding=1),
+            ResidualBlock(256, 256, padding=1),
+            ResidualBlock(256, 64, padding=1),
+            ResidualBlock(64, 32, padding=1)
+        )
+    
+    @property
+    def body_channels(self):
+        return 32
+
+    
+class TicTacToeNetwork(PolicyValueNetwork):
+    def __init__(self, rules: Rules):
+        super().__init__(rules)
+
+    def _build_body(self):
+        return nn.Sequential(
+            ResidualBlock(self.in_channels, 8, kernel_size=2),
+            ResidualBlock(8, 16, kernel_size=1)
+        )
+    
+    @property
+    def body_channels(self):
+        return 16
+
+
+
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -106,3 +172,12 @@ class ResidualBlock(nn.Module):
         out += x
         out = self.relu2(out)
         return out
+    
+
+class NetworkFactory:
+    @staticmethod
+    def create(game):
+        if game.lower() == "tictactoe":
+            return TicTacToeNetwork(TicTacToeRules())
+        elif game.lower() == "chess":
+            return ChessNetwork(ChessRules())

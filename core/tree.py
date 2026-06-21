@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import torch
 
-from core.network import PolicyValueNetwork
+from core.network import PolicyValueNetwork, NetworkFactory
 from game.env import Environment
 from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
@@ -318,7 +318,7 @@ class NetworkMCTS(BaseMCTS):
 
 
 if __name__ == "__main__":
-    network = PolicyValueNetwork(rules=ChessRules())
+    network = NetworkFactory.create("chess")
     net_agent = NetworkMCTS(network=network, rules=ChessRules(), num_rollout=100)
     vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=10)
 
