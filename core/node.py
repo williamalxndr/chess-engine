@@ -6,11 +6,18 @@ from game.rules import Rules
 class Node:
     """
     A node in the MCTS search tree.
-
-    Holds a game state and the statistics gathered for it during search.
     """
 
     def __init__(self, rules: Rules, state, parent=None, action=None):
+        """
+        Create a node for `state` and cache the rule-derived facts about it.
+
+        Args:
+            rules (Rules): game rules used to query this state.
+            state: the game state this node represents.
+            parent (Node): the node this one was expanded from, or None for the root.
+            action (int): the action that led from `parent` to this node, or None.
+        """
         self.rules = rules
         self.state = state
         self.parent = parent
@@ -27,12 +34,28 @@ class Node:
 
     def add_child(self, child: "Node", action):
         """
-        Append child to this node's children.
+        Attach `child` under the edge `action`.
+
+        Args:
+            child (Node): the child node to attach.
+            action (int): the action edge that reaches `child`.
         """
         child.action = action
         self.children[action] = child
 
     def add_child_by_action(self, action: int):
+        """
+        Build and attach the child reached by `action`.
+
+        Args:
+            action (int): a legal action from this node's state.
+
+        Returns:
+            Node: the newly created child node.
+
+        Raises:
+            ValueError: if `action` is illegal in the current state.
+        """
         if action not in self.get_legal_actions():
             raise ValueError("Action is illegal in the current state")
 
@@ -40,23 +63,62 @@ class Node:
         child_node = Node(self.rules, child_state, self, action)
         self.add_child(child_node, action)
         return child_node
-    
-    def get_children_by_action(self, action) -> "Node":        
+
+    def get_children_by_action(self, action) -> "Node":
+        """
+        Look up an existing child by its action.
+
+        Args:
+            action (int): the action edge to look up.
+
+        Returns:
+            Node: the child node, or None if it has not been created yet.
+        """
         return self.children.get(action)
-    
+
     def get_legal_actions(self):
+        """
+        Legal actions available from this node's state.
+
+        Returns:
+            list[int]: the legal actions.
+        """
         return self.rules.get_legal_actions(self.state)
-    
+
     def get_untried_action(self):
+        """
+        Pop and return one action that has not been expanded yet.
+
+        Returns:
+            int: an untried action (removed from untried_actions).
+        """
         return self.untried_actions.pop()
 
     def get_leaf(self):
+        """
+        Whether this node is terminal (game over).
+
+        Returns:
+            bool: True if the state is terminal.
+        """
         return self.is_leaf
 
     def get_result(self):
+        """
+        Game result at this node.
+
+        Returns:
+            int: -1 if X wins, 1 if O wins, 0 for a draw, or None if not terminal.
+        """
         return self.result
 
     def is_fully_expanded(self):
+        """
+        Whether every legal action from this node has been expanded.
+
+        Returns:
+            bool: True if there are no untried actions left.
+        """
         return len(self.untried_actions) == 0
 
     def increment_visit(self):
@@ -98,6 +160,3 @@ class Node:
     def copy(self):
         """Exposes a traditional .copy() method directly on the instance."""
         return copy.copy(self)
-
-
-

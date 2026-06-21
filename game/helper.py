@@ -4,16 +4,20 @@ import numpy as np
 
 def encode_chess_state(board: chess.Board) -> np.ndarray:
     """
-    Encode chess.Board to np.ndarray matrix so network can forward it
+    Encode a chess.Board into a tensor the network can forward.
 
-    Returns (21, 8, 8):
-      0-11  : 12 piece type x color planes, one-hot
-      12    : en passant target (sparse)
-      13-16 : castling rights (W-kingside, W-queenside, B-kingside, B-queenside)
-      17    : turn (white to move)
-      18    : in check
-      19    : halfmove clock / 100
-      20    : repetition
+    Args:
+        board (chess.Board): the board to encode.
+
+    Returns:
+        np.ndarray: float32 tensor of shape (21, 8, 8):
+          0-11  : 12 piece type x color planes, one-hot
+          12    : en passant target (sparse)
+          13-16 : castling rights (W-kingside, W-queenside, B-kingside, B-queenside)
+          17    : turn (white to move)
+          18    : in check
+          19    : halfmove clock / 100
+          20    : repetition
     """
     state = np.zeros((21, 8, 8), dtype=np.float32)
  
@@ -45,6 +49,18 @@ def encode_chess_state(board: chess.Board) -> np.ndarray:
 
 
 def move_to_int(move):
+    """
+    Encode a chess.Move as an integer action index.
+
+    Uses the AlphaZero scheme of 73 planes per from-square (56 queen-like
+    moves, 8 knight moves, 9 underpromotions), giving 64 * 73 = 4672 actions.
+
+    Args:
+        move (chess.Move): the move to encode.
+
+    Returns:
+        int: the action index in [0, 4671].
+    """
     from_sq = move.from_square; to_sq = move.to_square; promo = move.promotion
     from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
     to_file = chess.square_file(to_sq); to_rank = chess.square_rank(to_sq)
@@ -69,6 +85,17 @@ def move_to_int(move):
 
 
 def int_to_move(action, board=None):
+    """
+    Decode an integer action index back into a chess.Move (inverse of move_to_int).
+
+    Args:
+        action (int): the action index in [0, 4671].
+        board (chess.Board): optional board, used to detect when a forward
+            pawn move should be promoted to a queen.
+
+    Returns:
+        chess.Move: the decoded move.
+    """
     from_sq = action // 73; plane_index = action % 73
     from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
     promo = None

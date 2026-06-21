@@ -13,14 +13,23 @@ class Environment(ABC):
     """
 
     def __init__(self, rules: Rules):
+        """
+        Bind the session to a set of game rules.
+
+        Args:
+            rules (Rules): rules used for moves, transitions, and results.
+        """
         self.rules = rules
 
     def reset(self, state=None):
         """
-        Reset environment to initial state.
+        Reset the environment to a starting state.
+
+        Args:
+            state: state to start from, or None to use the rules' base state.
 
         Returns:
-            state: initial observation
+            observation: the starting state.
         """
         self.state = self.rules.base_state() if state is None else state
         return self.state
@@ -30,13 +39,16 @@ class Environment(ABC):
         Apply action to the live environment state.
 
         Args:
-            action: the action to take
+            action (int): the action to take
 
         Returns:
             observation: next state
-            reward: reward signal
-            terminated: whether the episode is done
-            info: dict with extra info
+            reward (int): reward signal
+            terminated (bool): whether the episode is done
+            info (dict): dict with extra info
+
+        Raises:
+            ValueError: if the action is illegal in the current state.
         """
         if action not in self.rules.get_legal_actions(self.state):
             raise ValueError("Action is illegal!")
@@ -48,8 +60,14 @@ class Environment(ABC):
         reward = result if terminated else 0
 
         return self.state, reward, terminated, {"winner": result}
-    
+
     def get_legal_actions(self):
+        """
+        Legal actions in the current state.
+
+        Returns:
+            list[int]: the legal actions.
+        """
         return self.rules.get_legal_actions(self.state)
 
     @abstractmethod
@@ -81,6 +99,9 @@ class Chess(Environment):
         self.reset()
 
     def render(self):
+        """
+        Prints the live board.
+        """
         print(self.state)
 
 
