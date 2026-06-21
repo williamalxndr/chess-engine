@@ -8,6 +8,7 @@ from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
 from game.env import TicTacToe
 from arena.player import *
+from game.helper import *
 
 
 class Arena:
@@ -81,7 +82,7 @@ class Arena:
                 game_over, result = current.advance(action, do_step=True)
                 other.advance(action, do_step=False)
 
-                self.log(f"{'Bot' if current.is_bot else 'Human'} plays {action}")
+                self.log(f"{'Bot' if current.is_bot else 'Human'} plays {str(int_to_move(action))}")
                 self.render_board()
 
                 current, other = other, current

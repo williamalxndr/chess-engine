@@ -88,7 +88,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         class_name = checkpoint["class_name"]
 
         if class_name not in PolicyValueNetwork._registry:
-            raise ValueError(f"Network class '{class_name}' tidak terdaftar di registry. Pastikan class tersebut sudah di-import.")
+            raise ValueError(f"Network class '{class_name}' is not registered in registry.")
             
         network_class = PolicyValueNetwork._registry[class_name]
 
