@@ -43,7 +43,7 @@ class Pipeline:
         self.arena = Arena()
 
     def generate(self):
-        num_generate = self.batch_size // 5
+        num_generate = max(1, self.batch_size // 5)
 
         for _ in range(num_generate):
             trajectory, z = self.generator.generate()
