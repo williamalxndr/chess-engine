@@ -12,9 +12,8 @@ from game.helper import *
 
 
 class Arena:
-    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, delay=5, num_games=1, verbose=False):
+    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, num_games=1, verbose=False):
         self.verbose = verbose
-        self.delay = delay
         self.num_games = num_games
         if env is None:
             self.env = TicTacToe()
@@ -43,18 +42,16 @@ class Arena:
         self.player_2.set_env(env)
         self.env = env
 
-    def sleep(self, current):
-        if not self.verbose or not current.is_bot:
-            return
-        
+    def _animate_thinking(self, stop_event):
+        """Berjalan di background thread, berhenti saat stop_event di-set."""
         dots = ["   ", ".  ", ".. ", "..."]
         i = 0
-        start = time.time()
-        while (time.time() - start) < self.delay:
+        while not stop_event.is_set():
             print(f"\rBot is thinking{dots[i % len(dots)]}", end="", flush=True)
             i += 1
-            time.sleep(0.4)
+            stop_event.wait(0.4) 
         
+        # Bersihkan teks animasi setelah selesai
         print("\r" + " " * 25 + "\r", end="", flush=True)
         
     def play(self):
@@ -76,8 +73,17 @@ class Arena:
             self.render_board()
 
             while not game_over:
-                self.sleep(current)
-                action = current.select_action()
+                if self.verbose and current.is_bot:
+                    stop_event = threading.Event()
+                    anim_thread = threading.Thread(target=self._animate_thinking, args=(stop_event,))
+                    anim_thread.start()
+                    
+                    action = current.select_action()
+                    
+                    stop_event.set()
+                    anim_thread.join()
+                else:
+                    action = current.select_action()
 
                 game_over, result = current.advance(action, do_step=True)
                 other.advance(action, do_step=False)
@@ -87,7 +93,6 @@ class Arena:
 
                 current, other = other, current
                 turn *= -1
-
 
             if result == -1:
                 self.results[id(x_player)] += 1
@@ -122,5 +127,6 @@ if __name__ == "__main__":
     vanilla_mcts = VanillaMCTSPlayer()
     human_player = HumanPlayer()
 
-    arena = Arena(env, human_player, vanilla_mcts)
-    arena.play(10)
+    arena = Arena(env, human_player, vanilla_mcts, verbose=True, num_games=10)
+    
+    arena.play()

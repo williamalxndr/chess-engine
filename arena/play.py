@@ -21,6 +21,6 @@ if __name__ == "__main__":
     human_player = HumanPlayer()
     bot_player = NetworkMCTSPlayer(network, game=args.game)
 
-    arena = Arena(env, human_player, bot_player, verbose=True, delay=5, num_games=args.num_games)
+    arena = Arena(env, human_player, bot_player, verbose=True, num_games=args.num_games)
 
     arena.play()
