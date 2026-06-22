@@ -127,7 +127,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         Raises:
             ValueError: if the checkpoint's class is not in the registry.
         """
-        checkpoint = torch.load(f"checkpoints/{game}/{path}.pt", weights_only=True)
+        checkpoint = torch.load(f"checkpoints/{game}/{path}.pt", weights_only=True, map_location="cpu")
 
         rules_stub = SimpleNamespace(
             action_space_size=checkpoint["action_space_size"],
