@@ -1,13 +1,18 @@
 import numpy as np
+import torch
 
 from core.tree import NetworkMCTS
-from core.network import PolicyValueNetwork
+from core.network import PolicyValueNetwork, NetworkFactory
+from game.encoder import *
 
 
 class Generator:
-    def __init__(self, mcts: NetworkMCTS, seed=42):
+    def __init__(self, mcts: NetworkMCTS, add_noise=True, seed=42):
         self.mcts = mcts
         self.rng = np.random.default_rng(seed)
+
+        if add_noise:
+            self.mcts.enable_noise()
 
     def reset(self):
         self.mcts.reset()
@@ -38,8 +43,8 @@ class Generator:
 
         Returns:
             state, policy, game_over, result
-            state (np.ndarray): The state of the current board
-            policy (list): The policy after running the search
+            state (torch.Tensor): The state of the current board
+            policy (torch.Tensor): The policy after running the search
             game_over (bool): True if game has winner or drawn
             result (None/int): None if game still going, or return the winner (-1/1/0)
         """
@@ -49,8 +54,10 @@ class Generator:
         policy = self._get_policy()
         action = self._sample_policy(policy)
 
-        game_over, result = self.mcts.advance(action)
+        state = self.mcts.rules.encode(state)
+        policy = torch.tensor(policy)
 
+        game_over, result = self.mcts.advance(action)
         return state, policy, game_over, result
 
     def generate(self):
@@ -69,10 +76,16 @@ class Generator:
         game_over = False
         while not game_over:
             state, policy, game_over, result = self.make_move()
-            state = self.mcts.rules.encode(state)
             trajectory.append((state, policy))
 
         return trajectory, result
         
         
+
+if __name__ == "__main__": 
+    mcts = NetworkMCTS(NetworkFactory.create("chess"), num_rollout=100, batch_size=10)
+    generator = Generator(mcts)
+
+    for _ in range(5):
+        generator.generate()
 

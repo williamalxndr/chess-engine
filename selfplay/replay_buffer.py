@@ -15,8 +15,10 @@ class ReplayBuffer:
 
         for s, pi in trajectory:
             pointer = self.count % self.max_size
-            s = torch.tensor(s.copy(), dtype=torch.float32)
-            pi = torch.tensor(pi, dtype=torch.float32)
+
+            s = s.clone().detach().float()
+            pi = pi.clone().detach().float()
+
             self.ring_buffer[pointer] = (s, pi, z)
 
             self.count += 1

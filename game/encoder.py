@@ -1,6 +1,12 @@
 import chess
 import math
 import numpy as np
+import torch
+
+
+# ENCODER AND DECODER SO NETWORK CAN FORWARD THE STATE
+
+device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
 
 def encode_chess_state(board: chess.Board) -> np.ndarray:
     """
@@ -10,7 +16,7 @@ def encode_chess_state(board: chess.Board) -> np.ndarray:
         board (chess.Board): the board to encode.
 
     Returns:
-        np.ndarray: float32 tensor of shape (21, 8, 8):
+        torch.Tensor: float32 tensor of shape (21, 8, 8):
           0-11  : 12 piece type x color planes, one-hot
           12    : en passant target (sparse)
           13-16 : castling rights (W-kingside, W-queenside, B-kingside, B-queenside)
@@ -45,9 +51,64 @@ def encode_chess_state(board: chess.Board) -> np.ndarray:
     state[18, :, :] = 1.0 if board.is_check() else 0.0
     state[19, :, :] = min(board.halfmove_clock, 100) / 100.0
     state[20, :, :] = 1.0 if board.is_repetition() else 0.0
+
+    state = torch.from_numpy(state).float().to(device)
  
     return state
 
+def decode_chess_state(state: np.ndarray) -> chess.Board:
+    """
+    Decode a (21, 8, 8) encoded state back into a chess.Board.
+
+    Args:
+        state (np.ndarray): float32 tensor of shape (21, 8, 8) as produced
+            by encode_chess_state.
+
+    Returns:
+        chess.Board: the reconstructed board.
+    """
+    if isinstance(state, torch.Tensor):
+        state = state.cpu().numpy()
+
+    board = chess.Board(fen=None)  # empty board, no pieces
+    board.clear()
+
+    # 0-11: piece planes
+    piece_types = [chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN, chess.KING]
+    for channel in range(12):
+        piece_type = piece_types[channel % 6]
+        color = chess.WHITE if channel < 6 else chess.BLACK
+        for row in range(8):
+            for col in range(8):
+                if state[channel, row, col] == 1.0:
+                    square = chess.square(col, 7 - row)
+                    board.set_piece_at(square, chess.Piece(piece_type, color))
+
+    # 12: en passant
+    board.ep_square = None
+    for row in range(8):
+        for col in range(8):
+            if state[12, row, col] == 1.0:
+                board.ep_square = chess.square(col, 7 - row)
+                break
+
+    # 13-16: castling rights
+    castling = 0
+    if state[13, 0, 0] == 1.0: castling |= chess.BB_H1  # W kingside
+    if state[14, 0, 0] == 1.0: castling |= chess.BB_A1  # W queenside
+    if state[15, 0, 0] == 1.0: castling |= chess.BB_H8  # B kingside
+    if state[16, 0, 0] == 1.0: castling |= chess.BB_A8  # B queenside
+    board.castling_rights = castling
+
+    # 17: turn
+    board.turn = chess.WHITE if state[17, 0, 0] == 1.0 else chess.BLACK
+
+    # 18: in check — derived from board state, cannot be set directly
+
+    # 19: halfmove clock
+    board.halfmove_clock = int(round(state[19, 0, 0] * 100))
+
+    return board
 
 def move_to_int(move):
     """

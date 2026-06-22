@@ -365,7 +365,7 @@ class ChessRules(Rules):
         """
         if action not in self.get_legal_actions(board):
             raise ValueError("Illegal action")
-        board_copy = board.copy()
+        board_copy = board.copy(stack=True)
         move = int_to_move(action, board_copy)
         board_copy.push(move)
         return board_copy
@@ -376,9 +376,9 @@ class ChessRules(Rules):
             state (chess.Board): the board to encode.
 
         Returns:
-            np.ndarray: float32 tensor of shape (21, 8, 8).
+            torch.Tensor: float32 tensor of shape (21, 8, 8).
         """
-        return encode_chess_state(state).astype(np.float32)
+        return encode_chess_state(state)
 
 
 RULES_REGISTRY = {"tictactoe": TicTacToeRules(), "chess": ChessRules()}
