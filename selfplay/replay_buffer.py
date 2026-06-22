@@ -36,7 +36,22 @@ class ReplayBuffer:
         s_list, pi_list, z_list = zip(*data)
         s, pi, z = torch.stack(s_list), torch.stack(pi_list), torch.stack(z_list)
         return s, pi, z
-            
+    
+    def save(self, path: str):
+        torch.save({
+            'ring_buffer': self.ring_buffer,
+            'count': self.count,
+            'max_size': self.max_size,
+            'seed': self.seed,
+        }, path)
+
+    @staticmethod
+    def load(path: str) -> "ReplayBuffer":
+        data = torch.load(path, weights_only=False)
+        buf = ReplayBuffer(max_size=data['max_size'], seed=data['seed'])
+        buf.ring_buffer = data['ring_buffer']
+        buf.count = data['count']
+        return buf            
     
     def __len__(self):
         return min(self.count, self.max_size)

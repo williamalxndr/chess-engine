@@ -71,21 +71,15 @@ class Generator:
             trajectory (list): a list contains [s_0, pi_0, s_1, pi_1, ..., s_t-1, pi_t-1]
             result (int): game results, -1 if X wins, 1 if O wins, 0 if draw
         """
-        start_time = time.perf_counter()
-
         self.reset()
         trajectory = []
 
         game_over = False
-        print("generating")
         while not game_over:
             state, policy, game_over, result = self.make_move()
-            # print(decode_chess_state(state))
             trajectory.append((state, policy))
 
         end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-        print(f"Time to generate 1 game: {elapsed_time:.4f}s, game_length = {len(trajectory)/2}")
 
         return trajectory, result
         

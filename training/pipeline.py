@@ -29,7 +29,7 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, replay_buffer_max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False, version="v1"):
         self.network = network
         self.game = game
         self.train_batch_size = train_batch_size
@@ -41,7 +41,11 @@ class Pipeline:
 
         network = PolicyValueNetwork(self.rules) if network is None else network
         self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
-        self.replay_buffer = ReplayBuffer(max_size)
+        buffer_path = Path(f"checkpoints/{self.game}/{version}_buffer.pt")
+        if buffer_path.exists():
+            self.replay_buffer = ReplayBuffer.load(buffer_path)
+        else:
+            self.replay_buffer = ReplayBuffer(replay_buffer_max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
@@ -63,7 +67,7 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, version="example", duration_hours=None):
+    def train(self, version="v1", duration_hours=None):
         duration_seconds = duration_hours * 3600 if duration_hours else None
         total_target = self.iterations
         
@@ -138,7 +142,6 @@ class Pipeline:
             return loss, 0
         return min_loss, not_improving + 1
 
-
     def _maybe_log(self, current_time, last_log_time, log_interval,
                 start_time, duration_seconds, iteration, loss, progress):
         if current_time - last_log_time < log_interval:
@@ -182,8 +185,8 @@ class Pipeline:
         return copy.deepcopy(self.network)
     
     def save(self, version: str):
-        # mkdir if not exist
         self.network.save(self.game, version)
+        self.replay_buffer.save(f"checkpoints/{self.game}/{version}_buffer.pt")
 
     @staticmethod
     def load(network: PolicyValueNetwork, version: str) -> PolicyValueNetwork:
@@ -216,7 +219,7 @@ class Pipeline:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
-    parser.add_argument("--version", type=str, help="version for saving the network OR load network from", default="example")
+    parser.add_argument("--version", type=str, help="version for saving the network OR load network from", default="v1")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=100)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--train_batch_size", type=int, help="How many sample for replay buffer sampling?", default=32)
@@ -224,6 +227,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output")
+    parser.add_argument("--replay_buffer_max_size", type=int, help="Max size of replay buffer", default=100000)
 
     args = parser.parse_args()
 
@@ -240,11 +244,13 @@ if __name__ == "__main__":
     pipeline = Pipeline(
         network=network,
         game=args.game, 
+        version=args.version, 
         iterations=args.iterations, 
         steps_per_iter=args.steps_per_iter, 
-        train_batch_size=args.train_batch_size, 
+        train_batch_size=args.train_batch_size,
         mcts_batch_size=args.mcts_batch_size,
         num_mcts_rollout=args.num_rollout,
+        replay_buffer_max_size=args.replay_buffer_max_size,
         verbose=args.verbose,
     )
 
