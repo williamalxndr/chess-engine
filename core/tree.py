@@ -519,18 +519,15 @@ class NetworkMCTS(BaseMCTS):
         return self.network(torch_states)
     
     def _set_priors(self, node: Node, policy: np.ndarray):
-        """
-        Mask illegal moves, renormalize, and store priors on the node.
-
-        Args:
-            node (Node): node to set priors on.
-            policy (np.ndarray): raw policy output for this node, shape (action_space_size,).
-        """
         legal_actions = node.get_legal_actions()
         mask = np.ones(policy.shape, dtype=bool)
         mask[legal_actions] = False
-        policy[mask] = 0
+        policy[mask] = -1e9 
+        
+        policy = policy - np.max(policy)  
+        policy = np.exp(policy)
         policy = policy / np.sum(policy)
+        
         node.priors = {a: float(policy[a]) for a in legal_actions}
 
     @torch.no_grad()

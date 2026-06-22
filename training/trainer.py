@@ -11,10 +11,11 @@ class Trainer:
         self.optimizer = optimizer
         self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max)
         self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
-
-    def policy_loss(self, policy_pred, policy_true, epsilon=1e-15):
-        a = policy_true * torch.log(policy_pred + epsilon)
-        return - torch.mean(a.sum(dim=1))
+        
+    def policy_loss(self, policy_logits, policy_true, epsilon=1e-15):
+        log_probs = torch.nn.functional.log_softmax(policy_logits, dim=1)
+        a = policy_true * log_probs
+        return -torch.mean(a.sum(dim=1))    
     
     def value_loss(self, value_pred, value_true):
         loss_fn = nn.MSELoss()

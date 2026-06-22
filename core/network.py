@@ -41,8 +41,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         self.policy_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(self.body_channels, rules.action_space_size),
-            nn.Softmax(dim=1)
+            nn.Linear(self.body_channels, rules.action_space_size)
         )
         self.value_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),

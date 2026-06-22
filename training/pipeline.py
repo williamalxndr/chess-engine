@@ -29,38 +29,35 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False):
         self.network = network
         self.game = game
-        self.batch_size = batch_size
+        self.train_batch_size = train_batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
         self.patience = patience
         self.verbose = verbose
+        self.rules = RULES_REGISTRY[game]
 
-        network = PolicyValueNetwork(RULES_REGISTRY[game]) if network is None else network
-        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, seed=seed, add_noise=True)
+        network = PolicyValueNetwork(self.rules) if network is None else network
+        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
         self.replay_buffer = ReplayBuffer(max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
     def generate(self):
-        num_generate = max(1, self.batch_size // 30)
-
-        print(f"Generating {num_generate} games")
+        num_generate = max(1, self.train_batch_size // self.rules.avg_game_length)
         for _ in range(num_generate):
             trajectory, z = self.generator.generate()
             self.replay_buffer.add(trajectory, z)
-
-        print(len(self.replay_buffer))
 
     def sample(self):
         """
         Returns a tuple s, pi, z
         with each of them sized batch_size
         """
-        return self.replay_buffer.sample(self.batch_size)
+        return self.replay_buffer.sample(self.train_batch_size)
     
     def train_step(self):
         s, pi, z = self.sample()
@@ -87,7 +84,7 @@ class Pipeline:
 
                 self.network.eval()
                 self.generate()
-                while len(self.replay_buffer) < self.batch_size:
+                while len(self.replay_buffer) < self.train_batch_size:
                     self.generate()
 
                 for _ in range(self.steps_per_iter):
@@ -226,7 +223,8 @@ if __name__ == "__main__":
     parser.add_argument("--path", type=str, help="path for saving the network OR load network from", default="example")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=100)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
-    parser.add_argument("--batch_size", type=int, help="How many batch of data per train step?", default=8)
+    parser.add_argument("--train_batch_size", type=int, help="How many sample for replay buffer sampling?", default=32)
+    parser.add_argument("--mcts_batch_size", type=int, help="How many batch size for mcts forwarding (in evaluation step)?", default=16)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output")
@@ -249,7 +247,8 @@ if __name__ == "__main__":
         game=args.game, 
         iterations=args.iterations, 
         steps_per_iter=args.steps_per_iter, 
-        batch_size=args.batch_size, 
+        train_batch_size=args.train_batch_size, 
+        mcts_batch_size=args.mcts_batch_size,
         num_mcts_rollout=args.num_rollout,
         verbose=args.verbose,
     )

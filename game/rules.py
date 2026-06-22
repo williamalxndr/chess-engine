@@ -159,6 +159,10 @@ class TicTacToeRules(Rules):
     def encoded_channels(self):
         return 1
 
+    @property
+    def avg_game_length(self):
+        return 8
+
     def base_state(self):
         """
         Returns:
@@ -298,6 +302,10 @@ class ChessRules(Rules):
     @property
     def encoded_channels(self):
         return 21
+    
+    @property
+    def avg_game_length(self):
+        return 30
 
     def base_state(self):
         """
