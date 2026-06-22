@@ -15,7 +15,7 @@ class BaseMCTS(ABC):
     Base class for MCTS
     """
 
-    def __init__(self, rules: Rules, env: Environment = None, num_rollout=1000, verbose=True, seed=42):
+    def __init__(self, rules: Rules, env: Environment = None, num_rollout=1000, batch_size=50, verbose=True, seed=42):
         """
         Build the search tree and create the root node.
 
@@ -29,6 +29,7 @@ class BaseMCTS(ABC):
         self.rules = rules
         self.env = env
         self.num_rollout = num_rollout
+        self.batch_size = batch_size
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
 
@@ -142,12 +143,12 @@ class BaseMCTS(ABC):
 
     def select(self):
         """
-        Descend the tree.
-
         Returns:
-            (node, action): the edge that needs expand_and_evaluate().
-            `action` is None if `node` itself is what needs evaluating
-            (a fresh/never-evaluated node, or a terminal node).
+            (node, action):
+            - action=None: node sudah punya priors, descend ke child terbaik
+            tapi child belum di-materialize → expand child itu
+            - action='evaluate': node belum punya priors → evaluate node ini dulu
+            - action=<int>: node punya priors, child ini perlu di-materialize
         """
         node = self.observed
         while self._has_been_expanded(node) and not node.get_leaf():
@@ -156,8 +157,12 @@ class BaseMCTS(ABC):
             if child is None:
                 return node, action
             node = child
+        
+        if not self._has_been_expanded(node) and not node.get_leaf():
+            return node, 'evaluate'
+        
         return node, None
-
+    
     def expand(self, node: Node, action=None):
         """
         Materialize ONE child of `node` and attach it.
@@ -176,7 +181,7 @@ class BaseMCTS(ABC):
         if action is None:
             action = node.get_untried_action()
         else:
-            node.untried_actions = [a for a in node.untried_actions if a != action]
+            node.untried_actions.remove(action)
 
         child_state = self.rules.transition_state(node.state, action)
         expanded_node = Node(self.rules, child_state, node, action)
@@ -196,22 +201,6 @@ class BaseMCTS(ABC):
         """
         pass
 
-    @abstractmethod
-    def expand_and_evaluate(self, node: Node, action):
-        """
-        Expand the selected edge (if any) and evaluate the resulting node.
-
-        Args:
-            node (Node): node returned by select().
-            action (int): edge to materialize, or None if `node` itself is
-                what needs evaluating.
-
-        Returns:
-            node (Node): the node to backpropagate from.
-            reward (float): value to backpropagate.
-        """
-        pass
-
     def backpropagate(self, node: Node, reward):
         """
         Propagate `reward` from `node` up to the root.
@@ -225,20 +214,48 @@ class BaseMCTS(ABC):
             node = node.parent
 
     def search(self):
-        """
-        Run `num_rollout` simulations from the observed node and pick a move.
-
-        Returns:
-            int: the best action by visit count after searching.
-        """
         self._apply_root_noise()
+        
+        sims_done = 0
+        while sims_done < self.num_rollout:
+            eval_nodes = []
 
-        for _ in range(self.num_rollout):
-            selected_node, action = self.select()
-            node, reward = self.expand_and_evaluate(selected_node, action)
-            self.backpropagate(node, reward)
+            for _ in range(self.batch_size):
+                selected_node, action = self.select()
+
+                if action == 'evaluate':
+                    selected_node.apply_virtual_loss()
+                    eval_nodes.append(selected_node)
+
+                elif selected_node.get_leaf():
+                    self.backpropagate(selected_node, selected_node.get_result())
+                    sims_done += 1
+
+                else:
+                    node = self.expand(selected_node, action)
+                    if node.get_leaf():
+                        self.backpropagate(node, node.get_result())
+                        sims_done += 1
+                    else:
+                        node.apply_virtual_loss()
+                        eval_nodes.append(node)
+
+            if not eval_nodes:
+                continue
+
+            values = self.evaluate(eval_nodes)
+
+            for node, value in zip(eval_nodes, values):
+                node.remove_virtual_loss()
+                if not node.children and not node.get_leaf():
+                    child = self.expand(node)
+                    self.backpropagate(child, value)
+                else:
+                    self.backpropagate(node, value)
+                sims_done += 1
 
         return self.get_best_action()
+
 
     def get_child_visit_count(self) -> np.ndarray:
         """
@@ -388,7 +405,7 @@ class VanillaMCTS(BaseMCTS):
             math.log(node._visit_count) / child._visit_count
         )
 
-    def evaluate(self, expanded_node: Node):
+    def evaluate(self, eval_nodes: list[Node]):
         """
         Estimate a node's value with a random rollout to the end of the game.
 
@@ -396,27 +413,11 @@ class VanillaMCTS(BaseMCTS):
             expanded_node (Node): node to evaluate.
 
         Returns:
-            int: the terminal result if the node is terminal, otherwise the
+            list[int]: the terminal result if the node is terminal, otherwise the
                 result of a random rollout from it.
         """
-        if expanded_node.get_leaf():
-            return expanded_node.result
-        return self.rules.rollout(expanded_node.state)
-
-    def expand_and_evaluate(self, node: Node, action):
-        """
-        Expand the edge and score the new child via rollout.
-
-        Args:
-            node (Node): node returned by select().
-            action (int): edge to materialize.
-
-        Returns:
-            expanded_node (Node): the newly created child.
-            reward (int): rollout/terminal value of that child.
-        """
-        expanded_node = self.expand(node, action)
-        return expanded_node, self.evaluate(expanded_node)
+        
+        return [self.rules.rollout(node.state) for node in eval_nodes]
 
     def _apply_root_noise(self):
         """
@@ -426,8 +427,8 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, rules: Rules, env: Environment = None,
-                 num_rollout=1000, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
+    def __init__(self, network: PolicyValueNetwork, rules: Rules=None, env: Environment = None,
+                 num_rollout=1000, batch_size=50, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
                  add_noise=False, network_train=False, verbose=True):
         """
         MCTS guided by a policy-value network (AlphaZero-style PUCT).
@@ -445,7 +446,8 @@ class NetworkMCTS(BaseMCTS):
             network_train (bool): put the network in train() (True) or eval() mode.
             verbose (bool): whether to print log messages.
         """
-        super().__init__(rules, env, num_rollout, verbose, seed)
+        rules = rules if rules is not None else network.rules
+        super().__init__(rules=rules, env=env, num_rollout=num_rollout, batch_size=batch_size, verbose=verbose, seed=seed)
         self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
         self.network = network.to(self.device)
         self.network.train(network_train)
@@ -481,21 +483,14 @@ class NetworkMCTS(BaseMCTS):
         return self.c_puct * self.p(node, action) * math.sqrt(node._visit_count) / (1 + n_action)
 
     def p(self, node: Node, action: int):
-        """
-        Prior probability of an edge, with Dirichlet noise.
-
-        Args:
-            node (Node): the parent node.
-            action (int): edge to evaluate.
-
-        Returns:
-            float: (1 - epsilon) * prior + epsilon * noise.
-        """
         prior = node.priors.get(action, 0)
+        if node is not self.observed:  
+            return prior
+
         noise = node.noise.get(action, 0)
         return (1 - self.epsilon) * prior + self.epsilon * noise
 
-    def forward_network(self, node: Node):
+    def forward_network(self, eval_nodes: list[Node]):
         """
         Run the network on a node's state, adding a batch dimension as needed.
 
@@ -509,75 +504,59 @@ class NetworkMCTS(BaseMCTS):
         Raises:
             ValueError: if encode() returns an unexpected shape.
         """
-        encoded_state = self.rules.encode(node.state)
-        torch_state = torch.from_numpy(encoded_state).float().to(self.device)
+        encoded_eval_states = [self.rules.encode(node.state) for node in eval_nodes]
+        torch_states = torch.stack(encoded_eval_states)
 
-        if torch_state.ndim == 2:          # (H, W) -> single channel, single state
-            torch_state = torch_state.unsqueeze(0).unsqueeze(0)
-        elif torch_state.ndim == 3:        # (C, H, W) -> single state
-            torch_state = torch_state.unsqueeze(0)
-        elif torch_state.ndim == 4:        # (B, C, H, W) -> already batched
+        if torch_states.ndim == 2:          # (H, W) -> single channel, single state
+            torch_states = torch_states.unsqueeze(0).unsqueeze(0)
+        elif torch_states.ndim == 3:        # (C, H, W) -> single state
+            torch_states = torch_states.unsqueeze(0)
+        elif torch_states.ndim == 4:        # (B, C, H, W) -> already batched
             pass
         else:
-            raise ValueError(f"encode() returned unexpected shape {tuple(torch_state.shape)}, expected (H,W), (C,H,W), or (B,C,H,W)")
+            raise ValueError(f"encode() returned unexpected shape {tuple(torch_states.shape)}, expected (H,W), (C,H,W), or (B,C,H,W)")
         
-        return self.network(torch_state)
+        return self.network(torch_states)
     
-    @torch.no_grad
-    def evaluate(self, node: Node):
+    def _set_priors(self, node: Node, policy: np.ndarray):
         """
-        Store network priors on the node and return its value estimate.
-
-        Illegal moves are masked out and the remaining priors renormalized
-        before being saved on the node.
+        Mask illegal moves, renormalize, and store priors on the node.
 
         Args:
-            node (Node): node to evaluate.
-
-        Returns:
-            float: the terminal result if the node is terminal, otherwise the
-                network's value estimate.
+            node (Node): node to set priors on.
+            policy (np.ndarray): raw policy output for this node, shape (action_space_size,).
         """
-        if node.get_leaf():
-            return node.get_result()
-
-        policy_head, value_head = self.forward_network(node)
-        policy = policy_head.squeeze(0).cpu().numpy()
-        value_head = value_head.cpu().item()
-
         legal_actions = node.get_legal_actions()
         mask = np.ones(policy.shape, dtype=bool)
         mask[legal_actions] = False
         policy[mask] = 0
         policy = policy / np.sum(policy)
-
         node.priors = {a: float(policy[a]) for a in legal_actions}
-        return value_head
 
-    def expand_and_evaluate(self, node: Node, action):
+    @torch.no_grad()
+    def evaluate(self, eval_nodes: list[Node]) -> np.ndarray:
         """
-        Expand the edge (if any), then evaluate the resulting node.
+        Run the network on eval_nodes, set priors on each, and return values.
 
         Args:
-            node (Node): node returned by select().
-            action (int): edge to materialize, or None to evaluate `node` itself.
+            eval_nodes (list[Node]): nodes to evaluate.
 
         Returns:
-            node (Node): the node that was evaluated.
-            reward (float): terminal result or network value of that node.
+            np.ndarray: value estimates, shape (B,).
         """
-        if action is not None:
-            node = self.expand(node, action)
+        policy_head, value_head = self.forward_network(eval_nodes)
 
-        if node.get_leaf():
-            return node, node.get_result()
+        policies = policy_head.cpu().numpy()  # (B, action_space_size)
+        values = value_head.cpu().numpy()     # (B, 1)
 
-        reward = self.evaluate(node)
-        return node, reward
+        for i, node in enumerate(eval_nodes):
+            self._set_priors(node, policies[i])
 
+        return values[:, 0]  # (B,)
+    
     def _apply_root_noise(self):
         """
-        Add dirichlet exploration noise to the root's priors.
+        Add Dirichlet exploration noise to the root's priors.
 
         Evaluates the root first if it has no priors yet, then samples one
         Dirichlet vector over its legal actions. No-op when epsilon == 0.
@@ -587,12 +566,20 @@ class NetworkMCTS(BaseMCTS):
 
         root = self.observed
         if not root.priors:
-            self.evaluate(root)
+            self.evaluate([root])
 
         legal_actions = list(root.priors.keys())
         noise = self.rng.dirichlet([self.alpha] * len(legal_actions))
-        root.noise = {a: noise[i] for i, a in enumerate(legal_actions)}
+        root.noise = {a: float(noise[i]) for i, a in enumerate(legal_actions)}
 
+    def enable_noise(self, epsilon=0.25, alpha=0.03):
+        self.epsilon = epsilon
+        self.alpha = alpha
+
+    def disable_noise(self):
+        self.epsilon = 0
+        
+            
 
 if __name__ == "__main__":
     network = NetworkFactory.create("chess")

@@ -7,6 +7,7 @@ import argparse
 from tqdm import tqdm
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
 from pathlib import Path
+from contextlib import contextmanager
 
 from game.env import TicTacToe
 from game.rules import RULES_REGISTRY
@@ -47,9 +48,12 @@ class Pipeline:
     def generate(self):
         num_generate = max(1, self.batch_size // 30)
 
+        print(f"Generating {num_generate} games")
         for _ in range(num_generate):
             trajectory, z = self.generator.generate()
             self.replay_buffer.add(trajectory, z)
+
+        print(len(self.replay_buffer))
 
     def sample(self):
         """
@@ -62,16 +66,58 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, path="example", duration_hours=None):        
-        min_loss = float('inf')   
-        not_improving = 0        
-        start_time = time.time()
-        last_log_time = start_time
-        log_interval = 600
+    def train(self, path="example", duration_hours=None):
         duration_seconds = duration_hours * 3600 if duration_hours else None
-        loss = policy_loss = v_loss = 0.0
+        total_target = duration_seconds if duration_seconds else self.iterations
+        
+        with self._make_progress(duration_hours, total_target) as (progress, task):
+            iteration = 0
+            start_time = time.time()
+            last_log_time = start_time
+            log_interval = 600
+            min_loss = float('inf')
+            not_improving = 0
+            loss = policy_loss = v_loss = 0.0
 
-        with Progress(
+            while True:
+                current_time = time.time()
+
+                if self._should_stop(current_time, start_time, duration_seconds, iteration):
+                    break
+
+                self.network.eval()
+                self.generate()
+                while len(self.replay_buffer) < self.batch_size:
+                    self.generate()
+
+                for _ in range(self.steps_per_iter):
+                    loss, policy_loss, v_loss = self.train_step()
+
+                min_loss, not_improving = self._update_early_stopping(loss, min_loss, not_improving)
+                if not_improving >= self.patience:
+                    break
+
+                current_time = time.time()
+                last_log_time = self._maybe_log(current_time, last_log_time, log_interval,
+                                                start_time, duration_seconds, iteration, loss, progress)
+
+                self._update_progress(progress, task, current_time, start_time,
+                                    duration_seconds, loss, policy_loss, v_loss, not_improving)
+
+                self.trainer.scheduler.step()
+                iteration += 1
+
+        self.save(path)
+        self._print_done(duration_seconds, path)
+        return self.get_network()
+
+    @contextmanager
+    def _make_progress(self, duration_hours, total_target):
+        initial_desc = "loss: 0.0000 | policy loss: 0.0000 | value loss: 0.0000"
+        if duration_hours:
+            initial_desc = f"Time left: {duration_hours:.2f}h | " + initial_desc
+
+        progress = Progress(
             TextColumn("{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
@@ -79,90 +125,65 @@ class Pipeline:
             TimeElapsedColumn(),
             transient=False,
             disable=not self.verbose,
-        ) as progress:
-            total_target = duration_seconds if duration_seconds else self.iterations
-            
-            initial_desc = "loss: 0.0000 | policy loss: 0.0000 | value loss: 0.0000"
-            if duration_seconds:
-                initial_desc = f"Time left: {duration_hours:.2f}h | " + initial_desc
-                
-            task = progress.add_task(
-                initial_desc, 
-                total=total_target
-            )
+        )
+        task = progress.add_task(initial_desc, total=total_target)
+        
+        with progress:
+            yield progress, task
 
-            iteration = 0
-            while True:
-                current_time = time.time()
-                if duration_seconds and (current_time - start_time) >= duration_seconds:
-                    if self.verbose:
-                        progress.update(task, completed=duration_seconds)
-                    break
-                if not duration_seconds and iteration >= self.iterations:
-                    break
+    def _should_stop(self, current_time, start_time, duration_seconds, iteration):
+        if duration_seconds:
+            return (current_time - start_time) >= duration_seconds
+        return iteration >= self.iterations
 
-                # Generate self play data, if batch size is greater then the size of replay buffer stored then generate again
-                self.network.eval()
-                self.generate()
-                while len(self.replay_buffer) < self.batch_size:
-                    self.generate()
 
-                # Train the network for n_steps_per_iter
-                for _ in range(self.steps_per_iter):
-                    loss, policy_loss, v_loss = self.train_step()
+    def _update_early_stopping(self, loss, min_loss, not_improving):
+        if loss < min_loss:
+            return loss, 0
+        return min_loss, not_improving + 1
 
-                # Early stopping check
-                if loss < min_loss:
-                    min_loss = loss
-                    not_improving = 0
-                else:
-                    not_improving += 1
 
-                if not_improving >= self.patience:
-                    break
-                
-                current_time = time.time()
-                if current_time - last_log_time >= log_interval:
-                    elapsed = current_time - start_time
-                    if duration_seconds:
-                        rem = max(0, duration_seconds - elapsed)
-                        msg = f"[Time Update] {elapsed/60:.0f}m elapsed | {rem/60:.0f}m remaining | loss: {loss:.4f}"
-                    else:
-                        msg = f"[Time Update] {elapsed/60:.0f}m elapsed | iteration: {iteration+1} | loss: {loss:.4f}"
-                    
-                    if self.verbose:
-                        progress.console.print(msg)
-                    else:
-                        print(f"\r{msg:<80}", end="", flush=True)
-                    
-                    last_log_time = current_time
+    def _maybe_log(self, current_time, last_log_time, log_interval,
+                start_time, duration_seconds, iteration, loss, progress):
+        if current_time - last_log_time < log_interval:
+            return last_log_time
 
-                # Progress bar display
-                if self.verbose:
-                    patience_str = f" | ⚠ patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
-                    desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
-                    
-                    if duration_seconds:
-                        remaining = max(0, duration_seconds - (current_time - start_time))
-                        desc = f"Time left: {remaining/3600:.2f}h | " + desc
-                        progress.update(task, completed=(current_time - start_time), description=desc)
-                    else:
-                        progress.update(task, advance=1, description=desc)
-
-                # LR scheduling
-                self.trainer.scheduler.step()
-                iteration += 1
-
-        self.save(path)
-
-        if not self.verbose:
-            print()
+        elapsed = current_time - start_time
+        if duration_seconds:
+            rem = max(0, duration_seconds - elapsed)
+            msg = f"[Time Update] {elapsed/60:.0f}m elapsed | {rem/60:.0f}m remaining | loss: {loss:.4f}"
+        else:
+            msg = f"[Time Update] {elapsed/60:.0f}m elapsed | iteration: {iteration+1} | loss: {loss:.4f}"
 
         if self.verbose:
-            print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
+            progress.console.print(msg)
+        else:
+            print(f"\r{msg:<80}", end="", flush=True)
 
-        return self.get_network()
+        return current_time
 
+
+    def _update_progress(self, progress, task, current_time, start_time,
+                        duration_seconds, loss, policy_loss, v_loss, not_improving):
+        if not self.verbose:
+            return
+
+        patience_str = f" | ⚠ patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
+        desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
+
+        if duration_seconds:
+            remaining = max(0, duration_seconds - (current_time - start_time))
+            desc = f"Time left: {remaining/3600:.2f}h | " + desc
+            progress.update(task, completed=(current_time - start_time), description=desc)
+        else:
+            progress.update(task, advance=1, description=desc)
+
+    def _print_done(self, duration_seconds, path):
+        if not self.verbose:
+            print()
+            return
+        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
+        
     def get_network(self):
         return copy.deepcopy(self.network)
     
