@@ -90,7 +90,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
-    def save(self, game: str, path: str):
+    def save(self, game: str, version: str):
         """
         Save the weights plus the architecture metadata, so load() can
         rebuild the network without an external rules argument. The
@@ -98,10 +98,10 @@ class PolicyValueNetwork(nn.Module, ABC):
 
         Args:
             game (str): game name; selects the checkpoints/<game> folder.
-            path (str): file name (without extension) to save under.
+            version (str): version to save.
         """
         dir_path = f"checkpoints/{game}"
-        fixed_path = f"{dir_path}/{path}.pt"
+        fixed_path = f"{dir_path}/{version}.pt"
 
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
@@ -113,13 +113,13 @@ class PolicyValueNetwork(nn.Module, ABC):
         }, fixed_path)
 
     @staticmethod
-    def load(game: str, path: str) -> "PolicyValueNetwork":
+    def load(game: str, version: str, parent_dir: str="checkpoints") -> "PolicyValueNetwork":
         """
         Rebuild a saved network from its checkpoint and load its weights.
 
         Args:
             game (str): game name; selects the checkpoints/<game> folder.
-            path (str): file name (without extension) to load.
+            version (str): version to load.
 
         Returns:
             PolicyValueNetwork: the reconstructed network with weights loaded.
@@ -127,7 +127,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         Raises:
             ValueError: if the checkpoint's class is not in the registry.
         """
-        checkpoint = torch.load(f"checkpoints/{game}/{path}.pt", weights_only=True, map_location="cpu")
+        checkpoint = torch.load(f"{parent_dir}/{game}/{version}.pt", weights_only=True, map_location="cpu")
 
         rules_stub = SimpleNamespace(
             action_space_size=checkpoint["action_space_size"],

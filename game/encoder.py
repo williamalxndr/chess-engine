@@ -8,53 +8,35 @@ import torch
 
 device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
 
-def encode_chess_state(board: chess.Board) -> np.ndarray:
-    """
-    Encode a chess.Board into a tensor the network can forward.
-
-    Args:
-        board (chess.Board): the board to encode.
-
-    Returns:
-        torch.Tensor: float32 tensor of shape (21, 8, 8):
-          0-11  : 12 piece type x color planes, one-hot
-          12    : en passant target (sparse)
-          13-16 : castling rights (W-kingside, W-queenside, B-kingside, B-queenside)
-          17    : turn (white to move)
-          18    : in check
-          19    : halfmove clock / 100
-          20    : repetition
-    """
+def encode_chess_state(board: chess.Board) -> torch.Tensor:
     state = np.zeros((21, 8, 8), dtype=np.float32)
-    
-    # 0-11
-    for square in chess.SQUARES:
-        piece = board.piece_at(square)
-        if piece is None:
-            continue
-        row = 7 - chess.square_rank(square)
-        col = chess.square_file(square)
-        channel = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
-        state[channel, row, col] = 1.0
- 
-    if board.ep_square is not None:
-        row = 7 - chess.square_rank(board.ep_square)
-        col = chess.square_file(board.ep_square)
-        state[12, row, col] = 1.0
- 
-    state[13, :, :] = 1.0 if board.has_kingside_castling_rights(chess.WHITE) else 0.0
-    state[14, :, :] = 1.0 if board.has_queenside_castling_rights(chess.WHITE) else 0.0
-    state[15, :, :] = 1.0 if board.has_kingside_castling_rights(chess.BLACK) else 0.0
-    state[16, :, :] = 1.0 if board.has_queenside_castling_rights(chess.BLACK) else 0.0
- 
-    state[17, :, :] = 1.0 if board.turn == chess.WHITE else 0.0
-    state[18, :, :] = 1.0 if board.is_check() else 0.0
-    state[19, :, :] = min(board.halfmove_clock, 100) / 100.0
-    state[20, :, :] = 1.0 if board.is_repetition() else 0.0
 
-    state = torch.from_numpy(state).float().to(device)
- 
-    return state
+    for piece_type in chess.PIECE_TYPES:
+        for color in [chess.WHITE, chess.BLACK]:
+            channel = (piece_type - 1) + (0 if color == chess.WHITE else 6)
+            bb = int(board.pieces(piece_type, color))
+            if bb == 0:
+                continue
+            arr = np.unpackbits(
+                np.array([bb], dtype=np.uint64).view(np.uint8),
+                bitorder='little'
+            ).reshape(8, 8)
+            state[channel] = arr[::-1]
+
+    if board.ep_square is not None:
+        state[12, 7 - chess.square_rank(board.ep_square),
+                  chess.square_file(board.ep_square)] = 1.0
+
+    state[13, :, :] = float(board.has_kingside_castling_rights(chess.WHITE))
+    state[14, :, :] = float(board.has_queenside_castling_rights(chess.WHITE))
+    state[15, :, :] = float(board.has_kingside_castling_rights(chess.BLACK))
+    state[16, :, :] = float(board.has_queenside_castling_rights(chess.BLACK))
+    state[17, :, :] = float(board.turn == chess.WHITE)
+    state[18, :, :] = float(board.is_check())
+    state[19, :, :] = min(board.halfmove_clock, 100) / 100.0
+    state[20, :, :] = float(board.is_repetition())
+
+    return torch.from_numpy(state)
 
 def decode_chess_state(state: np.ndarray) -> chess.Board:
     """

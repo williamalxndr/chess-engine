@@ -505,7 +505,7 @@ class NetworkMCTS(BaseMCTS):
             ValueError: if encode() returns an unexpected shape.
         """
         encoded_eval_states = [self.rules.encode(node.state) for node in eval_nodes]
-        torch_states = torch.stack(encoded_eval_states)
+        torch_states = torch.stack(encoded_eval_states).to(self.device)
 
         if torch_states.ndim == 2:          # (H, W) -> single channel, single state
             torch_states = torch_states.unsqueeze(0).unsqueeze(0)

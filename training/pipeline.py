@@ -5,7 +5,7 @@ from torch import optim
 import copy
 import argparse
 from tqdm import tqdm
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn, MofNCompleteColumn
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -54,7 +54,7 @@ class Pipeline:
 
     def sample(self):
         """
-        Returns a tuple s, pi, z
+        Returns a tuple sf, pi, z
         with each of them sized batch_size
         """
         return self.replay_buffer.sample(self.train_batch_size)
@@ -63,9 +63,9 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, path="example", duration_hours=None):
+    def train(self, version="example", duration_hours=None):
         duration_seconds = duration_hours * 3600 if duration_hours else None
-        total_target = duration_seconds if duration_seconds else self.iterations
+        total_target = self.iterations
         
         with self._make_progress(duration_hours, total_target) as (progress, task):
             iteration = 0
@@ -104,8 +104,8 @@ class Pipeline:
                 self.trainer.scheduler.step()
                 iteration += 1
 
-        self.save(path)
-        self._print_done(duration_seconds, path)
+        self.save(version)
+        self._print_done(duration_seconds, version)
         return self.get_network()
 
     @contextmanager
@@ -117,7 +117,7 @@ class Pipeline:
         progress = Progress(
             TextColumn("{task.description}"),
             BarColumn(),
-            TaskProgressColumn(),
+            MofNCompleteColumn(), 
             TextColumn("•"),
             TimeElapsedColumn(),
             transient=False,
@@ -158,7 +158,6 @@ class Pipeline:
 
         return current_time
 
-
     def _update_progress(self, progress, task, current_time, start_time,
                         duration_seconds, loss, policy_loss, v_loss, not_improving):
         if not self.verbose:
@@ -170,29 +169,27 @@ class Pipeline:
         if duration_seconds:
             remaining = max(0, duration_seconds - (current_time - start_time))
             desc = f"Time left: {remaining/3600:.2f}h | " + desc
-            progress.update(task, completed=(current_time - start_time), description=desc)
-        else:
-            progress.update(task, advance=1, description=desc)
 
-    def _print_done(self, duration_seconds, path):
+        progress.update(task, advance=1, description=desc)
+
+    def _print_done(self, duration_seconds, version):
         if not self.verbose:
             print()
             return
-        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --path {path}`")
+        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --version {version}`")
         
     def get_network(self):
         return copy.deepcopy(self.network)
     
-    def save(self, path: str):
+    def save(self, version: str):
         # mkdir if not exist
-        self.network.save(self.game, path)
+        self.network.save(self.game, version)
 
     @staticmethod
-    def load(network: PolicyValueNetwork, path: str) -> PolicyValueNetwork:
-        network.load_state_dict(torch.load(path))
+    def load(network: PolicyValueNetwork, version: str) -> PolicyValueNetwork:
+        network.load_state_dict(torch.load(version))
         return network
     
-
     def evaluate(self, old_network: PolicyValueNetwork, new_network: PolicyValueNetwork, num_games=100):
         env = TicTacToe()
         old_mcts = NetworkMCTSPlayer(old_network)
@@ -219,7 +216,7 @@ class Pipeline:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", type=str, help=f"what game do you want to train? listed games= {list(RULES_REGISTRY.keys())}", default="chess")
-    parser.add_argument("--path", type=str, help="path for saving the network OR load network from", default="example")
+    parser.add_argument("--version", type=str, help="version for saving the network OR load network from", default="example")
     parser.add_argument("--iterations", type=int, help="How many iteration to run?", default=100)
     parser.add_argument("--steps_per_iter", type=int, help="How many steps of optimization per iteration?", default=200)
     parser.add_argument("--train_batch_size", type=int, help="How many sample for replay buffer sampling?", default=32)
@@ -231,12 +228,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Verify the path points to an actual file
-    file_path = Path(f"checkpoints/{args.game}/{args.path}.pt")
+    file_path = Path(f"checkpoints/{args.game}/{args.version}.pt")
     if file_path.is_file():
         # Load the network if it exist
-        network = PolicyValueNetwork.load(args.game, args.path)
-        if args.verbose:
-            print("network loaded")
+        network = PolicyValueNetwork.load(args.game, args.version)
+        print("network loaded")
     else:
         # Create a new network if it doesn't exist yet
         network = NetworkFactory.create(args.game)
@@ -252,4 +248,4 @@ if __name__ == "__main__":
         verbose=args.verbose,
     )
 
-    pipeline.train(args.path, duration_hours=args.duration if args.duration > 0 else None)
+    pipeline.train(args.version, duration_hours=args.duration if args.duration > 0 else None)

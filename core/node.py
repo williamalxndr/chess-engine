@@ -30,7 +30,8 @@ class Node:
         self.turn = rules.get_whose_turn(state)
         self.is_leaf = rules.is_terminal(state)
         self.result = rules.get_result(state)
-        self.untried_actions = rules.get_legal_actions(state)
+        self._legal_actions = rules.get_legal_actions(state) 
+        self.untried_actions = list(self._legal_actions)  
 
     def add_child(self, child: "Node", action):
         """
@@ -83,7 +84,7 @@ class Node:
         Returns:
             list[int]: the legal actions.
         """
-        return self.rules.get_legal_actions(self.state)
+        return self._legal_actions
 
     def get_untried_action(self):
         """
