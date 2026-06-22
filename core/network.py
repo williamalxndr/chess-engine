@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from pathlib import Path
 from abc import ABC, abstractmethod
+import numpy as np
 
 from game.rules import Rules, TicTacToeRules, ChessRules
 
@@ -82,6 +83,11 @@ class PolicyValueNetwork(nn.Module, ABC):
             policy (torch.Tensor): action probabilities, shape (B, action_space_size).
             value (torch.Tensor): value estimates in [-1, 1], shape (B, 1).
         """
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).float()
+
+        x = x.to(next(self.parameters()).device)
+
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
@@ -141,8 +147,22 @@ class PolicyValueNetwork(nn.Module, ABC):
 
         return network
 
+class ChessNetwork:
+    LATEST = "ChessNetworkV1"
 
-class ChessNetwork(PolicyValueNetwork):
+    def __new__(cls, rules: Rules, version: str = None):
+        if version is not None:
+            target = f"ChessNetwork{version.upper()}"
+        else:
+            target = cls.LATEST
+        
+        if target not in PolicyValueNetwork._registry:
+            raise ValueError(f"Network version '{target}' is not registered.")
+        return PolicyValueNetwork._registry[target](rules)    
+
+class ChessNetworkV1(PolicyValueNetwork):
+    # Legacy
+    # 10 Residual blocks
     def __init__(self, rules: Rules):
         super().__init__(rules)
 
