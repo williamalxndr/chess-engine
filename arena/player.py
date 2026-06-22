@@ -6,7 +6,7 @@ import chess
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
 from game.rules import RULES_REGISTRY, int_to_move, move_to_int
-from game.helper import *
+from game.encoder import *
 
 class Player(ABC):
     def __init__(self):

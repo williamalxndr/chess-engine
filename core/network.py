@@ -147,12 +147,6 @@ class ChessNetwork(PolicyValueNetwork):
         super().__init__(rules)
 
     def _build_body(self):
-        """
-        Stack of residual blocks for the chess board (21 -> 32 channels).
-
-        Returns:
-            nn.Sequential: the residual body.
-        """
         return nn.Sequential(
             ResidualBlock(self.in_channels, 32, padding=1),
             ResidualBlock(32, 64, padding=1),
@@ -213,10 +207,10 @@ class ResidualBlock(nn.Module):
         self.padding = padding
 
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
-        self.norm1 = nn.GroupNorm(out_channels, out_channels)
+        self.norm1 = nn.BatchNorm2d(out_channels)
         self.relu1 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding)
-        self.norm2 = nn.GroupNorm(out_channels, out_channels)
+        self.norm2 = nn.BatchNorm2d(out_channels)
 
         if in_channels != out_channels:
             self.channel_proj = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)

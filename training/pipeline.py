@@ -28,13 +28,13 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, early_stopping=50, verbose=False):
+    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, batch_size=8, max_size=10000, seed=42, iterations=50, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False):
         self.network = network
         self.game = game
         self.batch_size = batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
-        self.early_stopping = early_stopping
+        self.patience = patience
         self.verbose = verbose
 
         network = PolicyValueNetwork(RULES_REGISTRY[game]) if network is None else network
@@ -45,7 +45,7 @@ class Pipeline:
         self.arena = Arena()
 
     def generate(self):
-        num_generate = max(1, self.batch_size // 5)
+        num_generate = max(1, self.batch_size // 30)
 
         for _ in range(num_generate):
             trajectory, z = self.generator.generate()
@@ -102,6 +102,7 @@ class Pipeline:
                     break
 
                 # Generate self play data, if batch size is greater then the size of replay buffer stored then generate again
+                self.network.eval()
                 self.generate()
                 while len(self.replay_buffer) < self.batch_size:
                     self.generate()
@@ -117,7 +118,7 @@ class Pipeline:
                 else:
                     not_improving += 1
 
-                if not_improving >= self.early_stopping:
+                if not_improving >= self.patience:
                     break
                 
                 current_time = time.time()
@@ -138,7 +139,7 @@ class Pipeline:
 
                 # Progress bar display
                 if self.verbose:
-                    patience_str = f" | ⚠ patience: {not_improving}/{self.early_stopping}" if not_improving > self.early_stopping * 0.5 else ""
+                    patience_str = f" | ⚠ patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
                     desc = f"loss: {loss:.4f} | policy loss: {policy_loss:.4f} | value loss: {v_loss:.4f}{patience_str}"
                     
                     if duration_seconds:

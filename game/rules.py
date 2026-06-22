@@ -3,7 +3,7 @@ import chess
 import math
 from abc import ABC, abstractmethod
 
-from game.helper import *
+from game.encoder import *
 
 
 class IllegalBoardError(Exception):

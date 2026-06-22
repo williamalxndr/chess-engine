@@ -20,7 +20,7 @@ class Generator:
 
     def _get_policy(self):
         """
-        Returns the list of policy with size=9 
+        Returns the list of policy with size=action space size
         """
         return self.mcts.get_policy()
     

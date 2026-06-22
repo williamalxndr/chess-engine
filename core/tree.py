@@ -446,7 +446,7 @@ class NetworkMCTS(BaseMCTS):
             verbose (bool): whether to print log messages.
         """
         super().__init__(rules, env, num_rollout, verbose, seed)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
         self.network = network.to(self.device)
         self.network.train(network_train)
         self.c_puct = c_puct
@@ -512,9 +512,6 @@ class NetworkMCTS(BaseMCTS):
         encoded_state = self.rules.encode(node.state)
         torch_state = torch.from_numpy(encoded_state).float().to(self.device)
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.network.to(device)
-
         if torch_state.ndim == 2:          # (H, W) -> single channel, single state
             torch_state = torch_state.unsqueeze(0).unsqueeze(0)
         elif torch_state.ndim == 3:        # (C, H, W) -> single state
@@ -526,6 +523,7 @@ class NetworkMCTS(BaseMCTS):
         
         return self.network(torch_state)
     
+    @torch.no_grad
     def evaluate(self, node: Node):
         """
         Store network priors on the node and return its value estimate.
@@ -544,16 +542,16 @@ class NetworkMCTS(BaseMCTS):
             return node.get_result()
 
         policy_head, value_head = self.forward_network(node)
-        policy_head = policy_head.squeeze(0)
-        value_head = value_head.item()
+        policy = policy_head.squeeze(0).cpu().numpy()
+        value_head = value_head.cpu().item()
 
         legal_actions = node.get_legal_actions()
-        mask = np.ones(policy_head.shape, dtype=bool)
+        mask = np.ones(policy.shape, dtype=bool)
         mask[legal_actions] = False
-        policy_head[mask] = 0
-        policy_head = policy_head / torch.sum(policy_head)
+        policy[mask] = 0
+        policy = policy / np.sum(policy)
 
-        node.priors = {a: policy_head[a].item() for a in legal_actions}
+        node.priors = {a: float(policy[a]) for a in legal_actions}
         return value_head
 
     def expand_and_evaluate(self, node: Node, action):
