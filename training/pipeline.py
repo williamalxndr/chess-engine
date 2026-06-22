@@ -129,10 +129,9 @@ class Pipeline:
             yield progress, task
 
     def _should_stop(self, current_time, start_time, duration_seconds, iteration):
-        if duration_seconds:
-            return (current_time - start_time) >= duration_seconds
+        if duration_seconds and (current_time - start_time) >= duration_seconds:
+            return True
         return iteration >= self.iterations
-
 
     def _update_early_stopping(self, loss, min_loss, not_improving):
         if loss < min_loss:
