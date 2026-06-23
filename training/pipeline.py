@@ -50,7 +50,7 @@ class Pipeline:
     def generate(self):
         num_generate = max(1, self.train_batch_size // (self.rules.avg_game_length * 2))
         for _ in range(num_generate):
-            trajectory, z = self.generator.generate(display=True)
+            trajectory, z = self.generator.generate()
             self.replay_buffer.add(trajectory, z)
 
     def sample(self):
