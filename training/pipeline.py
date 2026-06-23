@@ -67,15 +67,15 @@ class Pipeline:
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
 
-    def train(self, version="v1", duration_hours=None):
+    def train(self, version="v1", duration_hours=None, log_interval=5):
         duration_seconds = duration_hours * 3600 if duration_hours else None
         total_target = self.iterations
-        
+
         with self._make_progress(duration_hours, total_target) as (progress, task):
             iteration = 0
             start_time = time.time()
-            last_log_time = start_time
-            log_interval = 600
+            last_save_time = start_time
+            save_interval = 1800 
             min_loss = float('inf')
             not_improving = 0
             loss = policy_loss = v_loss = 0.0
@@ -99,8 +99,14 @@ class Pipeline:
                     break
 
                 current_time = time.time()
-                last_log_time = self._maybe_log(current_time, last_log_time, log_interval,
-                                                start_time, duration_seconds, iteration, loss, progress)
+
+                if (iteration+1) % log_interval == 0:
+                    elapsed = current_time - start_time
+                    print(f"iter {iteration+1} | loss: {loss:.4f} | policy: {policy_loss:.4f} | value: {v_loss:.4f} | {elapsed/60:.1f}m elapsed")
+
+                if current_time - last_save_time >= save_interval:
+                    self.save(version)
+                    last_save_time = current_time
 
                 self._update_progress(progress, task, current_time, start_time,
                                     duration_seconds, loss, policy_loss, v_loss, not_improving)
@@ -121,14 +127,14 @@ class Pipeline:
         progress = Progress(
             TextColumn("{task.description}"),
             BarColumn(),
-            MofNCompleteColumn(), 
+            MofNCompleteColumn(),
             TextColumn("•"),
             TimeElapsedColumn(),
             transient=False,
             disable=not self.verbose,
         )
         task = progress.add_task(initial_desc, total=total_target)
-        
+
         with progress:
             yield progress, task
 
@@ -141,25 +147,6 @@ class Pipeline:
         if loss < min_loss:
             return loss, 0
         return min_loss, not_improving + 1
-
-    def _maybe_log(self, current_time, last_log_time, log_interval,
-                start_time, duration_seconds, iteration, loss, progress):
-        if current_time - last_log_time < log_interval:
-            return last_log_time
-
-        elapsed = current_time - start_time
-        if duration_seconds:
-            rem = max(0, duration_seconds - elapsed)
-            msg = f"[Time Update] {elapsed/60:.0f}m elapsed | {rem/60:.0f}m remaining | loss: {loss:.4f}"
-        else:
-            msg = f"[Time Update] {elapsed/60:.0f}m elapsed | iteration: {iteration+1} | loss: {loss:.4f}"
-
-        if self.verbose:
-            progress.console.print(msg)
-        else:
-            print(f"\r{msg:<80}", end="", flush=True)
-
-        return current_time
 
     def _update_progress(self, progress, task, current_time, start_time,
                         duration_seconds, loss, policy_loss, v_loss, not_improving):
@@ -180,10 +167,10 @@ class Pipeline:
             print()
             return
         print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --version {version}`")
-        
+
     def get_network(self):
         return copy.deepcopy(self.network)
-    
+
     def save(self, version: str):
         self.network.save(self.game, version)
         self.replay_buffer.save(f"checkpoints/{self.game}/{version}_buffer.pt")
@@ -192,7 +179,7 @@ class Pipeline:
     def load(network: PolicyValueNetwork, version: str) -> PolicyValueNetwork:
         network.load_state_dict(torch.load(version))
         return network
-    
+
     def evaluate(self, old_network: PolicyValueNetwork, new_network: PolicyValueNetwork, num_games=100):
         env = TicTacToe()
         old_mcts = NetworkMCTSPlayer(old_network)
@@ -228,6 +215,7 @@ if __name__ == "__main__":
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output")
     parser.add_argument("--replay_buffer_max_size", type=int, help="Max size of replay buffer", default=100000)
+    parser.add_argument("--log_interval", type=int, help="Log every N iterations", default=5)
 
     args = parser.parse_args()
 
@@ -243,10 +231,10 @@ if __name__ == "__main__":
 
     pipeline = Pipeline(
         network=network,
-        game=args.game, 
-        version=args.version, 
-        iterations=args.iterations, 
-        steps_per_iter=args.steps_per_iter, 
+        game=args.game,
+        version=args.version,
+        iterations=args.iterations,
+        steps_per_iter=args.steps_per_iter,
         train_batch_size=args.train_batch_size,
         mcts_batch_size=args.mcts_batch_size,
         num_mcts_rollout=args.num_rollout,
@@ -254,4 +242,4 @@ if __name__ == "__main__":
         verbose=args.verbose,
     )
 
-    pipeline.train(args.version, duration_hours=args.duration if args.duration > 0 else None)
+    pipeline.train(args.version, duration_hours=args.duration if args.duration > 0 else None, log_interval=args.log_interval)
