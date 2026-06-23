@@ -29,7 +29,7 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, replay_buffer_max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False, version="v1"):
+    def __init__(self, network: PolicyValueNetwork = None, replay_buffer: ReplayBuffer = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, replay_buffer_max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False, kaggle=False, version="v1"):
         self.network = network
         self.game = game
         self.train_batch_size = train_batch_size
@@ -37,23 +37,20 @@ class Pipeline:
         self.steps_per_iter = steps_per_iter
         self.patience = patience
         self.verbose = verbose
+        self.kaggle = kaggle
         self.rules = RULES_REGISTRY[game]
 
         network = PolicyValueNetwork(self.rules) if network is None else network
+        self.replay_buffer = ReplayBuffer(replay_buffer_max_size) if replay_buffer is None else replay_buffer
         self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
-        buffer_path = Path(f"checkpoints/{self.game}/{version}_buffer.pt")
-        if buffer_path.exists():
-            self.replay_buffer = ReplayBuffer.load(buffer_path)
-        else:
-            self.replay_buffer = ReplayBuffer(replay_buffer_max_size)
         self.generator = Generator(self.mcts, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
     def generate(self):
-        num_generate = max(1, self.train_batch_size // self.rules.avg_game_length)
+        num_generate = max(1, self.train_batch_size // (self.rules.avg_game_length * 2))
         for _ in range(num_generate):
-            trajectory, z = self.generator.generate()
+            trajectory, z = self.generator.generate(display=True)
             self.replay_buffer.add(trajectory, z)
 
     def sample(self):
@@ -62,7 +59,7 @@ class Pipeline:
         with each of them sized batch_size
         """
         return self.replay_buffer.sample(self.train_batch_size)
-    
+
     def train_step(self):
         s, pi, z = self.sample()
         return self.trainer.step(s, pi, z)
@@ -75,7 +72,7 @@ class Pipeline:
             iteration = 0
             start_time = time.time()
             last_save_time = start_time
-            save_interval = 1800 
+            save_interval = 600
             min_loss = float('inf')
             not_improving = 0
             loss = policy_loss = v_loss = 0.0
@@ -100,22 +97,27 @@ class Pipeline:
 
                 current_time = time.time()
 
-                if (iteration+1) % log_interval == 0:
+                if self.kaggle and iteration % log_interval == 0:
                     elapsed = current_time - start_time
-                    print(f"iter {iteration+1} | loss: {loss:.4f} | policy: {policy_loss:.4f} | value: {v_loss:.4f} | {elapsed/60:.1f}m elapsed")
+                    remaining_str = ""
+                    if duration_seconds:
+                        remaining = max(0, duration_seconds - elapsed)
+                        remaining_str = f" | {remaining/3600:.2f}h left"
+                    patience_str = f" | patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
+                    print(f"iter {iteration} | loss: {loss:.4f} | policy: {policy_loss:.4f} | value: {v_loss:.4f} | {elapsed/60:.1f}m elapsed{remaining_str}{patience_str} | replay buffer: {len(self.replay_buffer)}")
 
+                # Save every 10 minutes
                 if current_time - last_save_time >= save_interval:
                     self.save(version)
                     last_save_time = current_time
 
-                self._update_progress(progress, task, current_time, start_time,
-                                    duration_seconds, loss, policy_loss, v_loss, not_improving)
+                self._update_progress(progress, task, current_time, start_time, duration_seconds, loss, policy_loss, v_loss, not_improving)
 
                 self.trainer.scheduler.step()
                 iteration += 1
 
         self.save(version)
-        self._print_done(duration_seconds, version)
+        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --version {version}`")
         return self.get_network()
 
     @contextmanager
@@ -131,7 +133,7 @@ class Pipeline:
             TextColumn("•"),
             TimeElapsedColumn(),
             transient=False,
-            disable=not self.verbose,
+            disable=not self.verbose or self.kaggle,
         )
         task = progress.add_task(initial_desc, total=total_target)
 
@@ -150,7 +152,7 @@ class Pipeline:
 
     def _update_progress(self, progress, task, current_time, start_time,
                         duration_seconds, loss, policy_loss, v_loss, not_improving):
-        if not self.verbose:
+        if not self.verbose or self.kaggle:
             return
 
         patience_str = f" | ⚠ patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
@@ -161,12 +163,6 @@ class Pipeline:
             desc = f"Time left: {remaining/3600:.2f}h | " + desc
 
         progress.update(task, advance=1, description=desc)
-
-    def _print_done(self, duration_seconds, version):
-        if not self.verbose:
-            print()
-            return
-        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --version {version}`")
 
     def get_network(self):
         return copy.deepcopy(self.network)
@@ -180,28 +176,6 @@ class Pipeline:
         network.load_state_dict(torch.load(version))
         return network
 
-    def evaluate(self, old_network: PolicyValueNetwork, new_network: PolicyValueNetwork, num_games=100):
-        env = TicTacToe()
-        old_mcts = NetworkMCTSPlayer(old_network)
-        new_mcts = NetworkMCTSPlayer(new_network)
-        random_player = RandomPlayer()
-        vanilla_mcts = VanillaMCTSPlayer()
-
-        player_1 = new_mcts
-        player_2 = vanilla_mcts
-
-        self.arena.__init__(env, player_1=vanilla_mcts, player_2=new_mcts, verbose=False)
-
-        results = self.arena.play(num_games)
-
-        if self.verbose:
-            player_1_win = results[id(player_1)] / num_games
-            player_2_win = results[id(player_2)] / num_games
-
-            print(results)
-            print(f"player_1_win: {player_1_win}")
-            print(f"player_2_win: {player_2_win}")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -212,25 +186,41 @@ if __name__ == "__main__":
     parser.add_argument("--train_batch_size", type=int, help="How many sample for replay buffer sampling?", default=32)
     parser.add_argument("--mcts_batch_size", type=int, help="How many batch size for mcts forwarding (in evaluation step)?", default=16)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
-    parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=0.0)
-    parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output")
-    parser.add_argument("--replay_buffer_max_size", type=int, help="Max size of replay buffer", default=100000)
-    parser.add_argument("--log_interval", type=int, help="Log every N iterations", default=5)
-
+    parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=None)
+    parser.add_argument("--verbose", action="store_true", default=False, help="Enable rich progress bar (local)")
+    parser.add_argument("--kaggle", action="store_true", default=False, help="Kaggle mode: plain print logging, no rich progress bar")
+    parser.add_argument("--log_interval", type=int, help="Log every N iterations", default=1)
+    parser.add_argument("--replay_buffer_max_size", type=int, help="Max size of replay buffer", default=10000)
+    parser.add_argument("--kaggle_network", type=str, default=None, help="Kaggle network path, e.g. 'williamalxndr-v1/pytorch/default/1'")
+    parser.add_argument("--kaggle_buffer", type=str, default=None, help="Kaggle buffer path")
     args = parser.parse_args()
 
-    # Verify the path points to an actual file
-    file_path = Path(f"checkpoints/{args.game}/{args.version}.pt")
-    if file_path.is_file():
-        # Load the network if it exist
-        network = PolicyValueNetwork.load(args.game, args.version)
-        print("network loaded")
+    kaggle_network_path = Path(f"/kaggle/input/{args.kaggle_network}/{args.version}.pt") if args.kaggle_network else None
+    local_network_path = Path(f"checkpoints/{args.game}/{args.version}.pt")
+    kaggle_buffer_path = Path(f"/kaggle/input/{args.kaggle_buffer}/{args.version}_buffer.pt") if args.kaggle_buffer else None
+    local_buffer_path = Path(f"checkpoints/{args.game}/{args.version}_buffer.pt")
+
+    if kaggle_network_path and kaggle_network_path.is_file():            # Load from kaggle
+        network = PolicyValueNetwork.load(str(kaggle_network_path))
+        print(f"network loaded from Kaggle model: {kaggle_network_path}")
+    elif local_network_path.is_file():                                   # Load from local
+        network = PolicyValueNetwork.load(game=args.game, version=args.version)
+        print("network loaded from checkpoint")
     else:
-        # Create a new network if it doesn't exist yet
         network = NetworkFactory.create(args.game)
+
+    if kaggle_buffer_path and kaggle_buffer_path.is_file():              # Load from kaggle
+        replay_buffer = ReplayBuffer.load(path=str(kaggle_buffer_path))
+        print(f"buffer loaded from Kaggle: {kaggle_buffer_path}")
+    elif local_buffer_path.is_file():                                    # Load from local
+        replay_buffer = ReplayBuffer.load(path=local_buffer_path)
+        print("buffer loaded from checkpoint")
+    else:
+        replay_buffer = ReplayBuffer(args.replay_buffer_max_size)
 
     pipeline = Pipeline(
         network=network,
+        replay_buffer=replay_buffer,
         game=args.game,
         version=args.version,
         iterations=args.iterations,
@@ -240,6 +230,7 @@ if __name__ == "__main__":
         num_mcts_rollout=args.num_rollout,
         replay_buffer_max_size=args.replay_buffer_max_size,
         verbose=args.verbose,
+        kaggle=args.kaggle,
     )
 
-    pipeline.train(args.version, duration_hours=args.duration if args.duration > 0 else None, log_interval=args.log_interval)
+    pipeline.train(args.version, duration_hours=args.duration if args.duration else None, log_interval=args.log_interval)

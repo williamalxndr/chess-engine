@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import time
+import sys
 
 from core.tree import NetworkMCTS
 from core.network import PolicyValueNetwork, NetworkFactory
@@ -61,28 +62,28 @@ class Generator:
         game_over, result = self.mcts.advance(action)
         return state, policy, game_over, result
 
-    def generate(self):
-        """
-        Reset the game, then
-        MCTS plays 1 game until gets a result.
-
-        ## Returns:
-            trajectory, result
-            trajectory (list): a list contains [s_0, pi_0, s_1, pi_1, ..., s_t-1, pi_t-1]
-            result (int): game results, -1 if X wins, 1 if O wins, 0 if draw
-        """
+    def generate(self, display=False):
         self.reset()
         trajectory = []
 
         game_over = False
+        first = True
+
         while not game_over:
             state, policy, game_over, result = self.make_move()
             trajectory.append((state, policy))
 
-        end_time = time.perf_counter()
+            if display:
+                board_str = str(decode_chess_state(state))
+                if not first:
+                    sys.stdout.write(f"\033[{board_str.count(chr(10)) + 1}A\033[0J")
+                sys.stdout.write(board_str + "\n")
+                sys.stdout.flush()
+                first = False
 
-        return trajectory, result
-        
+        if display:
+            print(self.mcts.observed.state.result())
+        return trajectory, result        
         
 
 if __name__ == "__main__": 

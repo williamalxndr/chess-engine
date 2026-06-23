@@ -162,12 +162,13 @@ class ChessNetwork:
 class ChessNetworkV1(PolicyValueNetwork):
     # Legacy
     # 10 Residual blocks
+    # Encoded state channel: 21
     def __init__(self, rules: Rules):
         super().__init__(rules)
 
     def _build_body(self):
         return nn.Sequential(
-            ResidualBlock(self.in_channels, 32, padding=1),
+            ResidualBlock(21, 32, padding=1),
             ResidualBlock(32, 64, padding=1),
             ResidualBlock(64, 128, padding=1),
             ResidualBlock(128, 256, padding=1),

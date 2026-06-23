@@ -305,7 +305,7 @@ class ChessRules(Rules):
     
     @property
     def avg_game_length(self):
-        return 30
+        return 80
 
     def base_state(self):
         """
