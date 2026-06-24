@@ -113,7 +113,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         }, fixed_path)
 
     @staticmethod
-    def load(game: str, version: str, parent_dir: str="checkpoints") -> "PolicyValueNetwork":
+    def load(game: str=None, version: str=None, parent_dir: str="checkpoints", path: str=None) -> "PolicyValueNetwork":
         """
         Rebuild a saved network from its checkpoint and load its weights.
 
@@ -127,7 +127,8 @@ class PolicyValueNetwork(nn.Module, ABC):
         Raises:
             ValueError: if the checkpoint's class is not in the registry.
         """
-        checkpoint = torch.load(f"{parent_dir}/{game}/{version}.pt", weights_only=True, map_location="cpu")
+        path = f"{parent_dir}/{game}/{version}.pt" if path is None else path
+        checkpoint = torch.load(path, weights_only=True, map_location="cpu")
 
         rules_stub = SimpleNamespace(
             action_space_size=checkpoint["action_space_size"],

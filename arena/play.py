@@ -8,17 +8,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A sample script demonstrating python argument parsing.")
     parser.add_argument("--game", type=str, default="chess")
     parser.add_argument("--version", type=str, help="network you want to load", default="v1")
+    parser.add_argument("--path", type=str, help="absolute path to load the network", default=None)
     parser.add_argument("--num_games", type=int, help="how many times do you want to play against the bot", default=1)
-    parser.add_argument("--kaggle", action="store_true", help="load model from kaggle dataset directory")
+    parser.add_argument("--kaggle_network", action="store_true", help="load network from kaggle dataset directory")
 
     args = parser.parse_args()
 
-    if args.kaggle:
-        parent_dir = "kaggle"
+    if args.path:
+        network = PolicyValueNetwork.load(path=args.path)
     else:
-        parent_dir = "checkpoints"
+        if args.kaggle_network:
+            parent_dir = "kaggle"
+        else:
+            parent_dir = "checkpoints"
 
-    network = PolicyValueNetwork.load(game=args.game, version=args.version, parent_dir=parent_dir)
+        network = PolicyValueNetwork.load(game=args.game, version=args.version, parent_dir=parent_dir)
+        
     if args.game == "chess":
         env = Chess()
     elif args.game == "tictactoe":

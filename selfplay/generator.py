@@ -69,12 +69,18 @@ class Generator:
         game_over = False
         first = True
 
+        if display:
+            board_str = str(self.mcts.observed.state)
+            sys.stdout.write(board_str + "\n")
+            sys.stdout.flush()
+            first = False 
+
         while not game_over:
             state, policy, game_over, result = self.make_move()
             trajectory.append((state, policy))
 
             if display:
-                board_str = str(decode_chess_state(state))
+                board_str = str(self.mcts.observed.state)
                 if not first:
                     sys.stdout.write(f"\033[{board_str.count(chr(10)) + 1}A\033[0J")
                 sys.stdout.write(board_str + "\n")
@@ -83,6 +89,9 @@ class Generator:
 
         if display:
             print(self.mcts.observed.state.result())
+            fen = self.mcts.observed.state.fen()
+            print(f"Board: https://lichess.org/editor/{fen.replace(' ', '_')}")
+            
         return trajectory, result        
         
 

@@ -8,6 +8,7 @@ from tqdm import tqdm
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn, MofNCompleteColumn
 from pathlib import Path
 from contextlib import contextmanager
+import time
 
 from game.env import TicTacToe
 from game.rules import RULES_REGISTRY
@@ -49,9 +50,18 @@ class Pipeline:
 
     def generate(self):
         num_generate = max(1, self.train_batch_size // (self.rules.avg_game_length * 2))
-        for _ in range(num_generate):
-            trajectory, z = self.generator.generate()
+        print(f"Generating {num_generate} games")
+        
+        total_start = time.time()
+        for i in range(num_generate):
+            start = time.time()
+            trajectory, z = self.generator.generate(display=False)
+            elapsed = time.time() - start
             self.replay_buffer.add(trajectory, z)
+            print(f"  Game {i+1}/{num_generate} | {len(trajectory)} moves | {elapsed:.2f}s")
+        
+        total = time.time() - total_start
+        print(f"Done: {num_generate} games in {total:.2f}s (avg {total/num_generate:.2f}s/game)")
 
     def sample(self):
         """
@@ -202,7 +212,7 @@ if __name__ == "__main__":
 
     if kaggle_network_path and kaggle_network_path.is_file():            # Load from kaggle
         network = PolicyValueNetwork.load(str(kaggle_network_path))
-        print(f"network loaded from Kaggle model: {kaggle_network_path}")
+        print(f"network loaded from Kaggle: {kaggle_network_path}")
     elif local_network_path.is_file():                                   # Load from local
         network = PolicyValueNetwork.load(game=args.game, version=args.version)
         print("network loaded from checkpoint")
