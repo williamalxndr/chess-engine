@@ -7,7 +7,7 @@ from pathlib import Path
 from abc import ABC, abstractmethod
 import numpy as np
 
-from game.rules import Rules, TicTacToeRules, ChessRules
+from game.rules import Rules, TicTacToeRules, ChessRules, RULES_REGISTRY
 
 
 class PolicyValueNetwork(nn.Module, ABC):
@@ -110,6 +110,7 @@ class PolicyValueNetwork(nn.Module, ABC):
             "action_space_size": self.action_space_size,
             "in_channels": self.in_channels,
             "class_name": self.__class__.__name__,
+            "game": game
         }, fixed_path)
 
     @staticmethod
@@ -130,11 +131,11 @@ class PolicyValueNetwork(nn.Module, ABC):
         path = f"{parent_dir}/{game}/{version}.pt" if path is None else path
         checkpoint = torch.load(path, weights_only=True, map_location="cpu")
 
-        rules_stub = SimpleNamespace(
+        game = checkpoint.get("game", game)  # ambil dari checkpoint, fallback ke argument
+        rules = RULES_REGISTRY[game] if game else SimpleNamespace(
             action_space_size=checkpoint["action_space_size"],
             encoded_channels=checkpoint["in_channels"],
         )
-
         class_name = checkpoint["class_name"]
 
         if class_name not in PolicyValueNetwork._registry:
@@ -142,10 +143,14 @@ class PolicyValueNetwork(nn.Module, ABC):
 
         network_class = PolicyValueNetwork._registry[class_name]
 
-        network = network_class(rules=rules_stub)
+        network = network_class(rules=rules)
         network.load_state_dict(checkpoint["state_dict"])
 
         return network
+    
+    @staticmethod
+    def create(game):
+        return NetworkFactory.create(game)
 
 class ChessNetwork:
     LATEST = "ChessNetworkV1"

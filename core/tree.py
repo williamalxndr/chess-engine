@@ -189,15 +189,9 @@ class BaseMCTS(ABC):
         return expanded_node
 
     @abstractmethod
-    def evaluate(self, node: Node):
+    def evaluate(self, nods: list[Node]):
         """
-        Evaluate how good a node is (defined by subclasses).
-
-        Args:
-            node (Node): node to evaluate.
-
-        Returns:
-            float: absolute value of the node.
+        Evaluate how good nodes are
         """
         pass
 
@@ -213,39 +207,56 @@ class BaseMCTS(ABC):
             node.update(reward)
             node = node.parent
 
+    def batch_select(self):
+        """
+        Run a search for `batch_size` times, and then 
+        returns a batch of matrix to be evaluated from the network, to be backpropagated.
+        
+        ## Returns
+            list[Nodes]:
+            Nodes to be evaluated in a single time.
+        """
+        eval_nodes = []
+        sims_done = 0
+
+        for _ in range(self.batch_size):
+            selected_node, action = self.select()
+
+            if action == 'evaluate':
+                selected_node.apply_virtual_loss()
+                eval_nodes.append(selected_node)
+
+            elif selected_node.get_leaf():
+                self.backpropagate(selected_node, selected_node.get_result())
+                sims_done += 1
+
+            else:
+                node = self.expand(selected_node, action)
+                if node.get_leaf():
+                    self.backpropagate(node, node.get_result())
+                    sims_done += 1
+                else:
+                    node.apply_virtual_loss()
+                    eval_nodes.append(node)
+
+        return eval_nodes, sims_done
+
+
     def search(self):
         self._apply_root_noise()
         
         sims_done = 0
+
         while sims_done < self.num_rollout:
-            eval_nodes = []
+            batch_nodes, batch_sims_done = self.batch_select()
+            sims_done += batch_sims_done
 
-            for _ in range(self.batch_size):
-                selected_node, action = self.select()
-
-                if action == 'evaluate':
-                    selected_node.apply_virtual_loss()
-                    eval_nodes.append(selected_node)
-
-                elif selected_node.get_leaf():
-                    self.backpropagate(selected_node, selected_node.get_result())
-                    sims_done += 1
-
-                else:
-                    node = self.expand(selected_node, action)
-                    if node.get_leaf():
-                        self.backpropagate(node, node.get_result())
-                        sims_done += 1
-                    else:
-                        node.apply_virtual_loss()
-                        eval_nodes.append(node)
-
-            if not eval_nodes:
+            if not batch_nodes:
                 continue
 
-            values = self.evaluate(eval_nodes)
+            values = self.evaluate(batch_nodes)
 
-            for node, value in zip(eval_nodes, values):
+            for node, value in zip(batch_nodes, values):
                 node.remove_virtual_loss()
                 if not node.children and not node.get_leaf():
                     child = self.expand(node)
@@ -427,7 +438,7 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, rules: Rules=None, env: Environment = None,
+    def __init__(self, network: PolicyValueNetwork, env: Environment = None,
                  num_rollout=1000, batch_size=50, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
                  add_noise=False, network_train=False, verbose=True):
         """
@@ -446,7 +457,7 @@ class NetworkMCTS(BaseMCTS):
             network_train (bool): put the network in train() (True) or eval() mode.
             verbose (bool): whether to print log messages.
         """
-        rules = rules if rules is not None else network.rules
+        rules = network.rules
         super().__init__(rules=rules, env=env, num_rollout=num_rollout, batch_size=batch_size, verbose=verbose, seed=seed)
         self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
         self.network = network.to(self.device)
@@ -489,8 +500,25 @@ class NetworkMCTS(BaseMCTS):
 
         noise = node.noise.get(action, 0)
         return (1 - self.epsilon) * prior + self.epsilon * noise
+    
+    def forward_encoded_states(self, eval_encoded_states: torch.Tensor):
+        if not isinstance(eval_encoded_states, torch.Tensor):
+            raise ValueError("eval_encoded_states is not a torch.Tensor")
+        
+        if eval_encoded_states.ndim != 4:
+            raise ValueError("eval_encoded_states shape must be (B x C x H x W)")
+        
+        return self.network(eval_encoded_states)
+    
+    def eval_batch(self, eval_nodes: list[Node]):
+        """
+        Returns a tensor of (B x C x H x W) to be forwarded/evaluated by the network
+        """
+        encoded_eval_states = [self.rules.encode(node.state) for node in eval_nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
+        return torch.stack(encoded_eval_states).to(self.device)       
 
-    def forward_network(self, eval_nodes: list[Node]):
+
+    def forward_nodes(self, eval_nodes: list[Node]):
         """
         Run the network on a node's state, adding a batch dimension as needed.
 
@@ -504,19 +532,8 @@ class NetworkMCTS(BaseMCTS):
         Raises:
             ValueError: if encode() returns an unexpected shape.
         """
-        encoded_eval_states = [self.rules.encode(node.state) for node in eval_nodes]
-        torch_states = torch.stack(encoded_eval_states).to(self.device)
-
-        if torch_states.ndim == 2:          # (H, W) -> single channel, single state
-            torch_states = torch_states.unsqueeze(0).unsqueeze(0)
-        elif torch_states.ndim == 3:        # (C, H, W) -> single state
-            torch_states = torch_states.unsqueeze(0)
-        elif torch_states.ndim == 4:        # (B, C, H, W) -> already batched
-            pass
-        else:
-            raise ValueError(f"encode() returned unexpected shape {tuple(torch_states.shape)}, expected (H,W), (C,H,W), or (B,C,H,W)")
-        
-        return self.network(torch_states)
+        batch = self.eval_batch(eval_nodes)
+        return self.forward_encoded_states(batch)
     
     def _set_priors(self, node: Node, policy: np.ndarray):
         legal_actions = node.get_legal_actions()
@@ -541,7 +558,19 @@ class NetworkMCTS(BaseMCTS):
         Returns:
             np.ndarray: value estimates, shape (B,).
         """
-        policy_head, value_head = self.forward_network(eval_nodes)
+        import time
+        start = time.perf_counter()
+        
+        policy_head, value_head = self.forward_nodes(eval_nodes)
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        elapsed = time.perf_counter() - start
+        
+        if torch.cuda.is_available():
+            print(f"[GPU] batch={len(eval_nodes)} | time={elapsed:.4f}s | mem={torch.cuda.memory_allocated()/1e9:.2f}GB | util={torch.cuda.utilization()}%", flush=True)
+        else:
+            print(f"[GPU] batch={len(eval_nodes)} | time={elapsed:.4f}s", flush=True)
 
         policies = policy_head.cpu().numpy()  # (B, action_space_size)
         values = value_head.cpu().numpy()     # (B, 1)
@@ -558,12 +587,14 @@ class NetworkMCTS(BaseMCTS):
         Evaluates the root first if it has no priors yet, then samples one
         Dirichlet vector over its legal actions. No-op when epsilon == 0.
         """
-        if self.epsilon == 0:
-            return
-
+        # Add prior
         root = self.observed
         if not root.priors:
-            self.evaluate([root])
+            self.evaluate([root]) 
+
+        # Add noise
+        if self.epsilon == 0:
+            return
 
         legal_actions = list(root.priors.keys())
         noise = self.rng.dirichlet([self.alpha] * len(legal_actions))
@@ -580,11 +611,11 @@ class NetworkMCTS(BaseMCTS):
 
 if __name__ == "__main__":
     network = NetworkFactory.create("chess")
-    net_agent = NetworkMCTS(network=network, rules=ChessRules(), num_rollout=100)
-    vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=10)
+    net_agent = NetworkMCTS(network=network, num_rollout=30, batch_size=10)
+    # vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=10)
 
     best_action_net = int_to_move(net_agent.search())
-    best_action_vanilla = int_to_move(vanilla_agent.search())
+    # best_action_vanilla = int_to_move(vanilla_agent.search())
 
-    print(best_action_net, best_action_vanilla)
+    print(best_action_net)
 

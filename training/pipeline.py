@@ -15,7 +15,7 @@ from game.rules import RULES_REGISTRY
 from core.tree import NetworkMCTS
 from core.network import PolicyValueNetwork, NetworkFactory
 from selfplay.replay_buffer import ReplayBuffer
-from selfplay.generator import Generator
+from selfplay.generator import SelfPlayGenerator
 from training.trainer import Trainer
 from arena.arena import *
 
@@ -43,25 +43,16 @@ class Pipeline:
 
         network = PolicyValueNetwork(self.rules) if network is None else network
         self.replay_buffer = ReplayBuffer(replay_buffer_max_size) if replay_buffer is None else replay_buffer
-        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
-        self.generator = Generator(self.mcts, seed=seed)
+        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
+        self.generator = SelfPlayGenerator(network=network, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
     def generate(self):
-        num_generate = max(1, self.train_batch_size // (self.rules.avg_game_length * 2))
-        print(f"Generating {num_generate} games")
-        
-        total_start = time.time()
-        for i in range(num_generate):
-            start = time.time()
-            trajectory, z = self.generator.generate(display=False)
-            elapsed = time.time() - start
-            self.replay_buffer.add(trajectory, z)
-            print(f"  Game {i+1}/{num_generate} | {len(trajectory)} moves | {elapsed:.2f}s")
-        
-        total = time.time() - total_start
-        print(f"Done: {num_generate} games in {total:.2f}s (avg {total/num_generate:.2f}s/game)")
+        results = self.generator.generate(1)
+        trajectory, z = results[0]
+        self.replay_buffer.add(trajectory, z)
+        print(len(replay_buffer))
 
     def sample(self):
         """
@@ -218,6 +209,7 @@ if __name__ == "__main__":
         print("network loaded from checkpoint")
     else:
         network = NetworkFactory.create(args.game)
+        print("network created")
 
     if kaggle_buffer_path and kaggle_buffer_path.is_file():              # Load from kaggle
         replay_buffer = ReplayBuffer.load(path=str(kaggle_buffer_path))
@@ -227,6 +219,7 @@ if __name__ == "__main__":
         print("buffer loaded from checkpoint")
     else:
         replay_buffer = ReplayBuffer(args.replay_buffer_max_size)
+        print("replay buffer created")
 
     pipeline = Pipeline(
         network=network,

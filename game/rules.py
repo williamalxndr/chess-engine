@@ -289,9 +289,9 @@ class TicTacToeRules(Rules):
             state (np.ndarray): the 3x3 board.
 
         Returns:
-            np.ndarray: the board as float32 with shape (1, 3, 3).
+            torch.Tensor: the board as float32 with shape (1, 3, 3).
         """
-        return state[np.newaxis, :, :].astype(np.float32)
+        return torch.tensor(state[np.newaxis, :, :].astype(np.float32))
 
 
 class ChessRules(Rules):
