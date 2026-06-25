@@ -163,7 +163,7 @@ class Node:
         while node is not None:
             node._value += 1
             node._visit_count -= 1
-        node = node.parent
+            node = node.parent
 
     def __repr__(self):
         return f"Node(state=\n{self.state}, \nvisits={self._visit_count}, value={self._value})"
