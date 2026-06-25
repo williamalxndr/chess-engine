@@ -118,7 +118,7 @@ class Pipeline:
                 iteration += 1
 
         self.save(version)
-        parent_dir = "kaggle" if args.kaggle else "checkpoints"
+        parent_dir = "kaggle" if self.kaggle else "checkpoints"
         print(f"Training finished! To play against the trained MCTS, run \
               \n`python3 -m arena.play --parent_dir {parent_dir} --game {self.game} --version {version}` \
                \nOR \
