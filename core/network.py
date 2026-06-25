@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from game.rules import Rules, TicTacToeRules, ChessRules, RULES_REGISTRY
+from game.encoder import encode_chess_state
+from core.node import Node
 
 
 class PolicyValueNetwork(nn.Module, ABC):
@@ -37,6 +39,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         self.action_space_size = rules.action_space_size
         self.in_channels = rules.encoded_channels
         self.body = self._build_body()
+        self.device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
 
         self.policy_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
@@ -82,13 +85,31 @@ class PolicyValueNetwork(nn.Module, ABC):
             policy (torch.Tensor): action probabilities, shape (B, action_space_size).
             value (torch.Tensor): value estimates in [-1, 1], shape (B, 1).
         """
+        import time
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).float()
+        x = x.to(self.device)
 
-        x = x.to(next(self.parameters()).device)
-
+        start = time.perf_counter()
         features = self.body(x)
-        return self.policy_head(features), self.value_head(features)
+        out = (self.policy_head(features), self.value_head(features))
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            elapsed = time.perf_counter() - start
+            print(f"[GPU] batch={x.shape[0]} | time={elapsed:.4f}s | "
+                f"mem={torch.cuda.memory_allocated()/1e9:.2f}GB | "
+                f"util={torch.cuda.utilization()}%", flush=True)
+
+        return out
+
+    def forward_nodes(self, nodes: list[Node]):
+        encoded_eval_states = [self.rules.encode(node.state) for node in nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
+        torch_states = torch.stack(encoded_eval_states).to(self.device)       
+
+        return self.forward(torch_states)
+
+
 
     def save(self, game: str, version: str):
         """

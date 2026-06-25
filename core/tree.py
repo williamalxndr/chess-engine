@@ -207,14 +207,14 @@ class BaseMCTS(ABC):
             node.update(reward)
             node = node.parent
 
-    def batch_select(self):
+    def collect_eval_nodes(self):
         """
         Run a search for `batch_size` times, and then 
         returns a batch of matrix to be evaluated from the network, to be backpropagated.
         
         ## Returns
-            list[Nodes]:
-            Nodes to be evaluated in a single time.
+            list[Nodes], int:
+            Nodes to be evaluated in a single time, sims_done
         """
         eval_nodes = []
         sims_done = 0
@@ -248,7 +248,7 @@ class BaseMCTS(ABC):
         sims_done = 0
 
         while sims_done < self.num_rollout:
-            batch_nodes, batch_sims_done = self.batch_select()
+            batch_nodes, batch_sims_done = self.collect_eval_nodes()
             sims_done += batch_sims_done
 
             if not batch_nodes:
@@ -501,7 +501,7 @@ class NetworkMCTS(BaseMCTS):
         noise = node.noise.get(action, 0)
         return (1 - self.epsilon) * prior + self.epsilon * noise
     
-    def forward_encoded_states(self, eval_encoded_states: torch.Tensor):
+    def forward_tensor(self, eval_encoded_states: torch.Tensor):
         if not isinstance(eval_encoded_states, torch.Tensor):
             raise ValueError("eval_encoded_states is not a torch.Tensor")
         
@@ -510,7 +510,7 @@ class NetworkMCTS(BaseMCTS):
         
         return self.network(eval_encoded_states)
     
-    def eval_batch(self, eval_nodes: list[Node]):
+    def encode_nodes(self, eval_nodes: list[Node]):
         """
         Returns a tensor of (B x C x H x W) to be forwarded/evaluated by the network
         """
@@ -532,10 +532,10 @@ class NetworkMCTS(BaseMCTS):
         Raises:
             ValueError: if encode() returns an unexpected shape.
         """
-        batch = self.eval_batch(eval_nodes)
-        return self.forward_encoded_states(batch)
+        batch = self.encode_nodes(eval_nodes)
+        return self.forward_tensor(batch)
     
-    def _set_priors(self, node: Node, policy: np.ndarray):
+    def set_priors(self, node: Node, policy: np.ndarray):
         legal_actions = node.get_legal_actions()
         mask = np.ones(policy.shape, dtype=bool)
         mask[legal_actions] = False
@@ -558,25 +558,14 @@ class NetworkMCTS(BaseMCTS):
         Returns:
             np.ndarray: value estimates, shape (B,).
         """
-        import time
-        start = time.perf_counter()
         
         policy_head, value_head = self.forward_nodes(eval_nodes)
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        elapsed = time.perf_counter() - start
-        
-        if torch.cuda.is_available():
-            print(f"[GPU] batch={len(eval_nodes)} | time={elapsed:.4f}s | mem={torch.cuda.memory_allocated()/1e9:.2f}GB | util={torch.cuda.utilization()}%", flush=True)
-        else:
-            print(f"[GPU] batch={len(eval_nodes)} | time={elapsed:.4f}s", flush=True)
 
         policies = policy_head.cpu().numpy()  # (B, action_space_size)
         values = value_head.cpu().numpy()     # (B, 1)
 
         for i, node in enumerate(eval_nodes):
-            self._set_priors(node, policies[i])
+            self.set_priors(node, policies[i])
 
         return values[:, 0]  # (B,)
     

@@ -30,12 +30,13 @@ class Pipeline:
             ^                                  |
             |_______ improved network _________|
     """
-    def __init__(self, network: PolicyValueNetwork = None, replay_buffer: ReplayBuffer = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, replay_buffer_max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_mcts_rollout=100, steps_per_iter=200, patience=50, verbose=False, kaggle=False, version="v1"):
+    def __init__(self, network: PolicyValueNetwork = None, replay_buffer: ReplayBuffer = None, game="tictactoe", optimizer: optim.Adam = None, train_batch_size=32, replay_buffer_max_size=10000, seed=42, iterations=50, mcts_batch_size=16, num_rollout=100, num_selfplay=2, steps_per_iter=200, patience=50, verbose=False, kaggle=False, version="v1"):
         self.network = network
         self.game = game
         self.train_batch_size = train_batch_size
         self.iterations = iterations
         self.steps_per_iter = steps_per_iter
+        self.num_selfplay = num_selfplay
         self.patience = patience
         self.verbose = verbose
         self.kaggle = kaggle
@@ -43,16 +44,15 @@ class Pipeline:
 
         network = PolicyValueNetwork(self.rules) if network is None else network
         self.replay_buffer = ReplayBuffer(replay_buffer_max_size) if replay_buffer is None else replay_buffer
-        self.mcts = NetworkMCTS(network, num_rollout=num_mcts_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
-        self.generator = SelfPlayGenerator(network=network, seed=seed)
+        self.mcts = NetworkMCTS(network, num_rollout=num_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
+        self.generator = SelfPlayGenerator(network=network, num_rollout=num_rollout, batch_size=mcts_batch_size, seed=seed)
         self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
     def generate(self):
-        results = self.generator.generate(1)
-        trajectory, z = results[0]
-        self.replay_buffer.add(trajectory, z)
-        print(len(replay_buffer))
+        results = self.generator.generate(self.num_selfplay)
+        for trajectory, z in results:
+            self.replay_buffer.add(trajectory, z)
 
     def sample(self):
         """
@@ -118,7 +118,10 @@ class Pipeline:
                 iteration += 1
 
         self.save(version)
-        print(f"Training finished! To play against the trained MCTS, run `python3 -m arena.play --game {self.game} --version {version}`")
+        print(f"Training finished! To play against the trained MCTS, run \
+              \n`python3 -m arena.play --game {self.game} --version {version}` \
+               \nOR \
+                \n`python3 -m arena.play --path checkpoints/chess/v1.pt` ")
         return self.get_network()
 
     @contextmanager
@@ -187,6 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_batch_size", type=int, help="How many sample for replay buffer sampling?", default=32)
     parser.add_argument("--mcts_batch_size", type=int, help="How many batch size for mcts forwarding (in evaluation step)?", default=16)
     parser.add_argument("--num_rollout", type=int, help="How many rollout?", default=100)
+    parser.add_argument("--num_selfplay", type=int, help="How many self-play games generated each iteration?", default=2)
     parser.add_argument("--duration", type=float, help="How many hours to train? (Overrides iterations)", default=None)
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable rich progress bar (local)")
     parser.add_argument("--kaggle", action="store_true", default=False, help="Kaggle mode: plain print logging, no rich progress bar")
@@ -230,7 +234,8 @@ if __name__ == "__main__":
         steps_per_iter=args.steps_per_iter,
         train_batch_size=args.train_batch_size,
         mcts_batch_size=args.mcts_batch_size,
-        num_mcts_rollout=args.num_rollout,
+        num_rollout=args.num_rollout,
+        num_selfplay=args.num_selfplay,
         replay_buffer_max_size=args.replay_buffer_max_size,
         verbose=args.verbose,
         kaggle=args.kaggle,

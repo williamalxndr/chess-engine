@@ -96,7 +96,7 @@ class HumanPlayer(Player):
 class NetworkMCTSPlayer(Player):
     def __init__(self, network: PolicyValueNetwork, game: str):
         super().__init__()
-        self.mcts = NetworkMCTS(network, rules=RULES_REGISTRY[game], epsilon=0)
+        self.mcts = NetworkMCTS(network, epsilon=0)
         self.is_bot = True
 
     def reset(self):
