@@ -149,13 +149,6 @@ class SelfPlayGenerator:
                 if game_over:
                     results[wid] = result
                     active_workers.discard(wid)
-        print()
-
-        for wid, worker in self.workers.items():
-            board = worker.mcts.root.state
-            fen = board.fen()
-            print(f"[Worker {wid}] Board: https://lichess.org/editor/{fen.replace(' ', '_')} result: {board.result()}")
-
 
         return [(trajectories[wid], results[wid]) for wid in trajectories]
 
