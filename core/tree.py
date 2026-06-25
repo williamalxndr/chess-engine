@@ -34,7 +34,6 @@ class BaseMCTS(ABC):
         self.rng = np.random.default_rng(seed=seed)
 
         self.root = Node(self.rules, self._initial_state())
-        self.observed = self.root
 
     def _initial_state(self):
         """
@@ -60,7 +59,6 @@ class BaseMCTS(ABC):
             state = self.rules.base_state()
 
         self.root = Node(self.rules, state)
-        self.observed = self.root
 
     def set_env(self, env: Environment):
         """
@@ -150,7 +148,7 @@ class BaseMCTS(ABC):
             - action='evaluate': node belum punya priors → evaluate node ini dulu
             - action=<int>: node punya priors, child ini perlu di-materialize
         """
-        node = self.observed
+        node = self.root
         while self._has_been_expanded(node) and not node.get_leaf():
             action = self.best_action(node)
             child = node.children.get(action)
@@ -270,20 +268,20 @@ class BaseMCTS(ABC):
 
     def get_child_visit_count(self) -> np.ndarray:
         """
-        Visit counts of the observed node's children, indexed by action.
+        Visit counts of the root node's children, indexed by action.
 
         Returns:
             np.ndarray: array of length action_space_size; entry a is the
                 visit count of the child reached by action a (0 if none).
         """
         counts = np.zeros(self.rules.action_space_size)
-        for action, child in self.observed.children.items():
+        for action, child in self.root.children.items():
             counts[action] = child._visit_count
         return counts
 
     def get_best_action(self):
         """
-        Most-visited child action of the observed node.
+        Most-visited child action of the root node.
 
         Returns:
             int: the action with the highest visit count.
@@ -314,28 +312,30 @@ class BaseMCTS(ABC):
 
     def advance(self, action, do_step=True):
         """
-        Move the observed node along `action`, optionally stepping the env.
+        Move the root node along `action`, optionally stepping the env.
 
         Args:
-            action (int): action to follow from the observed node.
+            action (int): action to follow from the root node.
             do_step (bool): if True and an env is attached, also step the env.
 
         Returns:
-            is_leaf (bool): whether the new observed node is terminal.
+            is_leaf (bool): whether the new root node is terminal.
             result: game result at the new node (None if not terminal).
 
         Raises:
             ValueError: if `action` is illegal in the current state.
         """
-        child = self.observed.get_children_by_action(action)
+        child = self.root.get_children_by_action(action)
         if child is not None:
             if do_step and self.env is not None:
                 self.env.step(action)
-            self.observed = child
-            return self.observed.get_leaf(), self.observed.get_result()
+            self.root = child
+            self.root.parent = None 
 
-        if action in self.rules.get_legal_actions(self.observed.state):
-            self.observed.add_child_by_action(action)
+            return self.root.get_leaf(), self.root.get_result()
+
+        if action in self.rules.get_legal_actions(self.root.state):
+            self.root.add_child_by_action(action)
             return self.advance(action, do_step)
 
         raise ValueError("No child with that action")
@@ -349,12 +349,12 @@ class BaseMCTS(ABC):
 
     def get_current_state(self):
         """
-        Return a copy of the observed node's state.
+        Return a copy of the root node's state.
 
         Returns:
             state: a copy of the current game state.
         """
-        return self.observed.state.copy()
+        return self.root.state.copy()
 
     def log(self, msg):
         """
@@ -495,7 +495,7 @@ class NetworkMCTS(BaseMCTS):
 
     def p(self, node: Node, action: int):
         prior = node.priors.get(action, 0)
-        if node is not self.observed:  
+        if node is not self.root:  
             return prior
 
         noise = node.noise.get(action, 0)
@@ -577,7 +577,7 @@ class NetworkMCTS(BaseMCTS):
         Dirichlet vector over its legal actions. No-op when epsilon == 0.
         """
         # Add prior
-        root = self.observed
+        root = self.root
         if not root.priors:
             self.evaluate([root]) 
 
