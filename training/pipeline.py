@@ -208,7 +208,7 @@ if __name__ == "__main__":
     local_buffer_path = Path(f"checkpoints/{args.game}/{args.version}_buffer.pt")
 
     if kaggle_network_path and kaggle_network_path.is_file():            # Load from kaggle
-        network = PolicyValueNetwork.load(str(kaggle_network_path))
+        network = PolicyValueNetwork.load(path=str(kaggle_network_path))
         print(f"network loaded from Kaggle: {kaggle_network_path}")
     elif local_network_path.is_file():                                   # Load from local
         network = PolicyValueNetwork.load(game=args.game, version=args.version)
