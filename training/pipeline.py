@@ -46,7 +46,7 @@ class Pipeline:
         self.replay_buffer = ReplayBuffer(replay_buffer_max_size) if replay_buffer is None else replay_buffer
         self.mcts = NetworkMCTS(network, num_rollout=num_rollout, batch_size=mcts_batch_size, seed=seed, add_noise=True)
         self.generator = SelfPlayGenerator(network=network, num_rollout=num_rollout, batch_size=mcts_batch_size, seed=seed)
-        self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01) if optimizer is None else optimizer, T_max=iterations)
+        self.trainer = Trainer(network, optim.Adam(network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer, T_max=iterations)
         self.arena = Arena()
 
     def generate(self):

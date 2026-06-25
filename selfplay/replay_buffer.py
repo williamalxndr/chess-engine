@@ -11,7 +11,6 @@ class ReplayBuffer:
         self.count = 0
 
     def add(self, trajectory, z):
-        print(f"[Buffer] Adding trajectory: {len(trajectory)} steps | z={z} | buffer_size={len(self)}/{self.max_size}")
         z = torch.tensor(z, dtype=torch.float32).unsqueeze(-1)
 
         for s, pi in trajectory:
@@ -24,7 +23,7 @@ class ReplayBuffer:
 
             self.count += 1
             
-        print(f"[Buffer] Done | buffer_size={len(self)}/{self.max_size}")
+        print(f"[Buffer] Adding trajectory: {len(trajectory)} steps | buffer_size={len(self)}/{self.max_size}")
 
 
     def sample(self, batch_size):

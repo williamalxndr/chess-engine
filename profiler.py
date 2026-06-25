@@ -1,17 +1,24 @@
 import cProfile
-import pstats
 
 from training.pipeline import Pipeline
 from core.network import NetworkFactory
 
 
 net = NetworkFactory.create("chess")
-pipeline = Pipeline(net, "chess", verbose=True)
+pipeline = Pipeline(
+    network=net,
+    game="chess",
+    train_batch_size=32,
+    replay_buffer_max_size=500,
+    mcts_batch_size=16,
+    num_selfplay=2,
+    num_rollout=32,
+    iterations=1,
+    verbose=True,
+)
 
 with cProfile.Profile() as profiler:
-    pipeline.train("profile", 0.05)
+    pipeline.train("profile", None)
 
-stats = pstats.Stats(profiler)
-stats.sort_stats(pstats.SortKey.TIME).print_stats(10)
-stats.sort_stats(pstats.SortKey.TIME).print_stats("cpu")
-stats.print_callers("cpu")  
+profiler.dump_stats("profile.prof")
+print("Saved to profile.prof")

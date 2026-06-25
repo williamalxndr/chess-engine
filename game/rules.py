@@ -342,7 +342,7 @@ class ChessRules(Rules):
         Returns:
             bool: True if the game is over (mate, stalemate, draw, etc.).
         """
-        return board.is_game_over()
+        return board.is_game_over() or board.is_repetition(3)
 
     def get_result(self, board):
         """
@@ -353,6 +353,9 @@ class ChessRules(Rules):
             int: -1 if White won, 1 if Black won, 0 for a draw, or None if
                 the game is not over.
         """
+        if board.is_repetition(3):
+            return 0
+
         RESULT_MAP = {"1-0": -1, "0-1": 1, "1/2-1/2": 0, "*": None}
         return RESULT_MAP[board.result()]
 
@@ -371,9 +374,7 @@ class ChessRules(Rules):
         Raises:
             ValueError: if the action is not legal on this board.
         """
-        if action not in self.get_legal_actions(board):
-            raise ValueError("Illegal action")
-        board_copy = board.copy(stack=True)
+        board_copy = board.copy(stack=8)
         move = int_to_move(action, board_copy)
         board_copy.push(move)
         return board_copy

@@ -34,7 +34,7 @@ def encode_chess_state(board: chess.Board) -> torch.Tensor:
     state[17, :, :] = float(board.turn == chess.WHITE)
     state[18, :, :] = float(board.is_check())
     state[19, :, :] = min(board.halfmove_clock, 100) / 100.0
-    state[20, :, :] = float(board.is_repetition())
+    state[20, :, :] = float(board.is_repetition(2))
 
     return torch.from_numpy(state)
 

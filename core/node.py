@@ -152,18 +152,18 @@ class Node:
         return self._value / self._visit_count
     
     def apply_virtual_loss(self):
-        self._value -= 1
-        self._visit_count += 1
-
-        if self.parent is not None:
-            self.parent.apply_virtual_loss()
+        node = self
+        while node is not None:
+            node._value -= 1
+            node._visit_count += 1
+            node = node.parent
 
     def remove_virtual_loss(self):
-        self._value += 1
-        self._visit_count -= 1
-
-        if self.parent is not None:
-            self.parent.remove_virtual_loss()
+        node = self
+        while node is not None:
+            node._value += 1
+            node._visit_count -= 1
+        node = node.parent
 
     def __repr__(self):
         return f"Node(state=\n{self.state}, \nvisits={self._visit_count}, value={self._value})"

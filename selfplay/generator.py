@@ -115,9 +115,7 @@ class SelfPlayGenerator:
             encoded = worker.mcts.rules.encode(state)
             game_over, result = worker.advance(action)
             step_results[wid] = (encoded, torch.tensor(policy), game_over, result)
-
         return step_results
-
 
     def generate(self, num_games=1):
         """
@@ -136,7 +134,6 @@ class SelfPlayGenerator:
         diff = num_games - self.num_worker
         if diff > 0: self.spawn(diff)
 
-
         for worker in self.workers.values():
             worker.reset()
 
@@ -152,12 +149,12 @@ class SelfPlayGenerator:
                 if game_over:
                     results[wid] = result
                     active_workers.discard(wid)
+        print()
 
         for wid, worker in self.workers.items():
-            board = worker.mcts.observed.state
+            board = worker.mcts.root.state
             fen = board.fen()
-            print(f"[Worker {wid}] result: {board.result()}", flush=True)
-            print(f"[Worker {wid}] Board: https://lichess.org/editor/{fen.replace(' ', '_')}", flush=True)
+            print(f"[Worker {wid}] Board: https://lichess.org/editor/{fen.replace(' ', '_')} result: {board.result()}")
 
 
         return [(trajectories[wid], results[wid]) for wid in trajectories]

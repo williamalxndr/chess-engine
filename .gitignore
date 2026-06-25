@@ -2,3 +2,5 @@ __pycache__/
 .vscode
 debug-storybook.log
 todo.md
+profile_results.txt
+profile.prof

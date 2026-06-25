@@ -114,7 +114,7 @@ class GameWorker:
         first = True
 
         if display:
-            board_str = str(self.mcts.observed.state)
+            board_str = str(self.mcts.root.state)
             sys.stdout.write(board_str + "\n")
             sys.stdout.flush()
             first = False 
@@ -124,7 +124,7 @@ class GameWorker:
             trajectory.append((state, policy))
 
             if display:
-                board_str = str(self.mcts.observed.state)
+                board_str = str(self.mcts.root.state)
                 if not first:
                     sys.stdout.write(f"\033[{board_str.count(chr(10)) + 1}A\033[0J")
                 sys.stdout.write(board_str + "\n")
@@ -132,8 +132,8 @@ class GameWorker:
                 first = False
 
         if display:
-            print(self.mcts.observed.state.result())
-            fen = self.mcts.observed.state.fen()
+            print(self.mcts.root.state.result())
+            fen = self.mcts.root.state.fen()
             print(f"Board: https://lichess.org/editor/{fen.replace(' ', '_')}")
             
         return trajectory, result        
