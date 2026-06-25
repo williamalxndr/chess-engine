@@ -22,9 +22,6 @@ class ReplayBuffer:
             self.ring_buffer[pointer] = (s, pi, z)
 
             self.count += 1
-            
-        print(f"[Buffer] Adding trajectory: {len(trajectory)} steps | buffer_size={len(self)}/{self.max_size}")
-
 
     def sample(self, batch_size):
         """

@@ -99,7 +99,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         #     elapsed = time.perf_counter() - start
         #     print(f"[GPU] batch={x.shape[0]} | time={elapsed:.4f}s | "
         #         f"mem={torch.cuda.memory_allocated()/1e9:.2f}GB | "
-        #         f"util={torch.cuda.utilization()}%", flush=True)
+        #         f"util={torch.cuda.utilization()}%")
 
         return out
 

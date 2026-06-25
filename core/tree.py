@@ -5,7 +5,6 @@ import numpy as np
 import torch
 
 from core.network import PolicyValueNetwork, NetworkFactory
-from game.env import Environment
 from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
 
@@ -15,60 +14,28 @@ class BaseMCTS(ABC):
     Base class for MCTS
     """
 
-    def __init__(self, rules: Rules, env: Environment = None, num_rollout=1000, batch_size=50, verbose=True, seed=42):
+    def __init__(self, rules: Rules, num_rollout=1000, batch_size=50, verbose=True, seed=42):
         """
         Build the search tree and create the root node.
 
         Args:
             rules (Rules): game rules (legal moves, transitions, results).
-            env (Environment): live game session, or None for a standalone tree.
             num_rollout (int): number of simulations to run per search().
             verbose (bool): whether to print log messages.
             seed (int): seed for the random number generator.
         """
         self.rules = rules
-        self.env = env
         self.num_rollout = num_rollout
         self.batch_size = batch_size
         self.verbose = verbose
         self.rng = np.random.default_rng(seed=seed)
 
-        self.root = Node(self.rules, self._initial_state())
-
-    def _initial_state(self):
-        """
-        Pick the state the root node starts from.
-
-        Returns:
-            state: the env's current state if an env is attached, otherwise
-                the rules' base state.
-        """
-        return self.env.state if self.env is not None else self.rules.base_state()
+        self.root = Node(self.rules, self.rules.base_state())
 
     def reset(self, state=None):
-        """
-        Clear the stored tree and start over from `state`.
-
-        Args:
-            state: state to restart from. If an env is attached the env is reset to it, if None, the rules' base state is used.
-        """
-        if self.env is not None:
-            self.env.reset(state)
-            state = self.env.state
-        elif state is None:
+        if state is None:
             state = self.rules.base_state()
-
         self.root = Node(self.rules, state)
-
-    def set_env(self, env: Environment):
-        """
-        Attach a live environment and reset the tree to its state.
-
-        Args:
-            env (Environment): the game session to attach.
-        """
-        self.env = env
-        self.reset()
 
     def score(self, node: Node, action: int):
         """
@@ -310,13 +277,12 @@ class BaseMCTS(ABC):
             )
         return counts / total
 
-    def advance(self, action, do_step=True):
+    def advance(self, action):
         """
-        Move the root node along `action`, optionally stepping the env.
+        Move the root node along `action`
 
         Args:
             action (int): action to follow from the root node.
-            do_step (bool): if True and an env is attached, also step the env.
 
         Returns:
             is_leaf (bool): whether the new root node is terminal.
@@ -327,19 +293,14 @@ class BaseMCTS(ABC):
         """
         child = self.root.get_children_by_action(action)
         if child is not None:
-            if do_step and self.env is not None:
-                self.env.step(action)
             self.root = child
-            self.root.parent = None 
-
+            self.root.parent = None
             return self.root.get_leaf(), self.root.get_result()
-
         if action in self.rules.get_legal_actions(self.root.state):
             self.root.add_child_by_action(action)
-            return self.advance(action, do_step)
-
+            return self.advance(action)
         raise ValueError("No child with that action")
-
+    
     @abstractmethod
     def _apply_root_noise(self):
         """
@@ -368,20 +329,19 @@ class BaseMCTS(ABC):
 
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, rules: Rules, env: Environment = None, num_rollout=1000,
+    def __init__(self, rules: Rules, num_rollout=1000,
                  exploration_constant=1.41, verbose=True, seed=42):
         """
         MCTS with UCT selection and random rollouts (no neural network).
 
         Args:
             rules (Rules): game rules.
-            env (Environment): live game session, or None.
             num_rollout (int): simulations per search().
             exploration_constant (float): UCT exploration weight (c).
             verbose (bool): whether to print log messages.
             seed (int): random number generator seed.
         """
-        super().__init__(rules, env, num_rollout, verbose, seed)
+        super().__init__(rules=rules, num_rollout=num_rollout, verbose=verbose, seed=seed)
         self.exploration_constant = exploration_constant
 
     def _has_been_expanded(self, node: Node) -> bool:
@@ -438,8 +398,9 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork, env: Environment = None,
-                 num_rollout=1000, batch_size=50, c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
+    def __init__(self, network: PolicyValueNetwork,
+                 num_rollout=1000, batch_size=50, 
+                 c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
                  add_noise=False, network_train=False, verbose=True):
         """
         MCTS guided by a policy-value network (AlphaZero-style PUCT).
@@ -447,7 +408,6 @@ class NetworkMCTS(BaseMCTS):
         Args:
             network (PolicyValueNetwork): network producing priors and a value.
             rules (Rules): game rules.
-            env (Environment): live game session, or None.
             num_rollout (int): simulations per search().
             c_puct (float): PUCT exploration weight.
             epsilon (float): weight of the Dirichlet root noise (0 disables it).
@@ -458,7 +418,7 @@ class NetworkMCTS(BaseMCTS):
             verbose (bool): whether to print log messages.
         """
         rules = network.rules
-        super().__init__(rules=rules, env=env, num_rollout=num_rollout, batch_size=batch_size, verbose=verbose, seed=seed)
+        super().__init__(rules=rules, num_rollout=num_rollout, batch_size=batch_size, verbose=verbose, seed=seed)
         self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
         self.network = network.to(self.device)
         self.network.train(network_train)
