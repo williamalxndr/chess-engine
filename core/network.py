@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from pathlib import Path
 from abc import ABC, abstractmethod
 import numpy as np
+import time
 
 from game.rules import Rules, TicTacToeRules, ChessRules, RULES_REGISTRY
 from game.encoder import encode_chess_state
@@ -85,21 +86,20 @@ class PolicyValueNetwork(nn.Module, ABC):
             policy (torch.Tensor): action probabilities, shape (B, action_space_size).
             value (torch.Tensor): value estimates in [-1, 1], shape (B, 1).
         """
-        import time
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).float()
         x = x.to(self.device)
 
-        start = time.perf_counter()
+        # start = time.perf_counter()
         features = self.body(x)
         out = (self.policy_head(features), self.value_head(features))
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            elapsed = time.perf_counter() - start
-            print(f"[GPU] batch={x.shape[0]} | time={elapsed:.4f}s | "
-                f"mem={torch.cuda.memory_allocated()/1e9:.2f}GB | "
-                f"util={torch.cuda.utilization()}%", flush=True)
+        # if torch.cuda.is_available():
+        #     torch.cuda.synchronize()
+        #     elapsed = time.perf_counter() - start
+        #     print(f"[GPU] batch={x.shape[0]} | time={elapsed:.4f}s | "
+        #         f"mem={torch.cuda.memory_allocated()/1e9:.2f}GB | "
+        #         f"util={torch.cuda.utilization()}%", flush=True)
 
         return out
 
