@@ -10,19 +10,14 @@ if __name__ == "__main__":
     parser.add_argument("--version", type=str, help="network you want to load", default="v1")
     parser.add_argument("--path", type=str, help="absolute path to load the network", default=None)
     parser.add_argument("--num_games", type=int, help="how many times do you want to play against the bot", default=1)
-    parser.add_argument("--kaggle_network", action="store_true", help="load network from kaggle dataset directory")
+    parser.add_argument("--parent_dir", type=str, help="where do you want to load the network from", default="checkpoints")
 
     args = parser.parse_args()
 
     if args.path:
         network = PolicyValueNetwork.load(path=args.path)
     else:
-        if args.kaggle_network:
-            parent_dir = "kaggle"
-        else:
-            parent_dir = "checkpoints"
-
-        network = PolicyValueNetwork.load(game=args.game, version=args.version, parent_dir=parent_dir)
+        network = PolicyValueNetwork.load(game=args.game, version=args.version, parent_dir=args.parent_dir)
         
     if args.game == "chess":
         env = Chess()

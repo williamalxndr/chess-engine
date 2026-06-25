@@ -118,10 +118,11 @@ class Pipeline:
                 iteration += 1
 
         self.save(version)
+        parent_dir = "kaggle" if args.kaggle else "checkpoints"
         print(f"Training finished! To play against the trained MCTS, run \
-              \n`python3 -m arena.play --game {self.game} --version {version}` \
+              \n`python3 -m arena.play --parent_dir {parent_dir} --game {self.game} --version {version}` \
                \nOR \
-                \n`python3 -m arena.play --path checkpoints/chess/v1.pt` ")
+                \n`python3 -m arena.play --path {parent_dir}/{self.game}/{version}.pt` ")
         return self.get_network()
 
     @contextmanager
@@ -172,8 +173,9 @@ class Pipeline:
         return copy.deepcopy(self.network)
 
     def save(self, version: str):
-        self.network.save(self.game, version)
-        self.replay_buffer.save(f"checkpoints/{self.game}/{version}_buffer.pt")
+        parent_dir = "kaggle" if self.kaggle else "checkpoints"
+        self.network.save(self.game, version, parent_dir=parent_dir)
+        self.replay_buffer.save(f"{parent_dir}/{self.game}/{version}_buffer.pt")
 
     @staticmethod
     def load(network: PolicyValueNetwork, version: str) -> PolicyValueNetwork:

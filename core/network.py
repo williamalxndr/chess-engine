@@ -111,7 +111,7 @@ class PolicyValueNetwork(nn.Module, ABC):
 
 
 
-    def save(self, game: str, version: str):
+    def save(self, game: str, version: str, parent_dir: str = "checkpoints"):
         """
         Save the weights plus the architecture metadata, so load() can
         rebuild the network without an external rules argument. The
@@ -121,7 +121,7 @@ class PolicyValueNetwork(nn.Module, ABC):
             game (str): game name; selects the checkpoints/<game> folder.
             version (str): version to save.
         """
-        dir_path = f"checkpoints/{game}"
+        dir_path = f"{parent_dir}/{game}"
         fixed_path = f"{dir_path}/{version}.pt"
 
         Path(dir_path).mkdir(parents=True, exist_ok=True)
