@@ -24,9 +24,9 @@ if __name__ == "__main__":
     elif args.game == "tictactoe":
         env = TicTacToe()
 
-    human_player = HumanPlayer()
+    human_player = HumanPlayer(env)
     bot_player = NetworkMCTSPlayer(network, game=args.game)
 
-    arena = Arena(env, human_player, bot_player, verbose=True, num_games=args.num_games)
+    arena = Arena(human_player, bot_player, verbose=True, num_games=args.num_games)
 
     arena.play()

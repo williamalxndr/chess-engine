@@ -6,20 +6,17 @@ import threading
 
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
-from game.env import TicTacToe
+from game.env import TicTacToe, Chess
 from arena.player import *
 from game.encoder import *
 
 
 class Arena:
-    def __init__(self, env: TicTacToe = None, player_1: "Player" = None, player_2: "Player" = None, num_games=1, verbose=False):
+    def __init__(self, player_1: "Player" = None, player_2: "Player" = None, num_games=1, verbose=False):
         self.verbose = verbose
         self.num_games = num_games
-        if env is None:
-            self.env = TicTacToe()
         if player_1 is not None and player_2 is not None:
             self.set_player(player_1, player_2)
-            self.set_env(env)
 
     def set_player(self, player_1, player_2):
         self.player_1 = player_1
@@ -33,7 +30,7 @@ class Arena:
             "Draw": 0
         }
 
-    def reset_env(self):
+    def reset_game(self):
         self.player_1.reset()
         self.player_2.reset()
     
@@ -50,12 +47,11 @@ class Arena:
             i += 1
             stop_event.wait(0.4) 
         
-        # Bersihkan teks animasi setelah selesai
         print("\r" + " " * 25 + "\r", end="", flush=True)
         
     def play(self):
         for _ in range(self.num_games):
-            self.reset_env()
+            self.reset_game()
 
             game_over = False
             turn = -1
@@ -84,8 +80,8 @@ class Arena:
                 else:
                     action = current.select_action()
 
-                game_over, result = current.advance(action, do_step=True)
-                other.advance(action, do_step=False)
+                game_over, result = current.advance(action)
+                other.advance(action)
 
                 self.log(f"{'Bot' if current.is_bot else 'Human'} plays {str(int_to_move(action))}")
                 self.render_board()
@@ -115,17 +111,28 @@ class Arena:
             print(msg)
 
     def render_board(self):
-        if self.verbose:
-            self.env.render()
+        if isinstance(self.player_1, HumanPlayer):
+            player_1_state = self.player_1.env.state
+        elif isinstance(self.player_1, NetworkMCTSPlayer) or isinstance(self.player_1, VanillaMCTSPlayer):
+            player_1_state = self.player_1.mcts.root.state
 
+        if isinstance(self.player_2, HumanPlayer):
+            player_2_state = self.player_2.env.state
+        elif isinstance(self.player_2, NetworkMCTSPlayer) or isinstance(self.player_2, VanillaMCTSPlayer):
+            player_2_state = self.player_2.mcts.root.state
+
+        assert player_1_state == player_2_state
+
+        if self.verbose:
+            print(player_1_state)
+            
 
 if __name__ == "__main__":
-    env = TicTacToe()
     network = PolicyValueNetwork()
     net_mcts = NetworkMCTSPlayer(network)
     vanilla_mcts = VanillaMCTSPlayer()
-    human_player = HumanPlayer()
+    human_player = HumanPlayer(env=Chess())
 
-    arena = Arena(env, human_player, vanilla_mcts, verbose=True, num_games=10)
+    arena = Arena(human_player, vanilla_mcts, verbose=True, num_games=10)
     
     arena.play()

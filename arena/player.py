@@ -7,6 +7,7 @@ from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
 from game.rules import RULES_REGISTRY, int_to_move, move_to_int
 from game.encoder import *
+from game.env import Environment
 
 class Player(ABC):
     def __init__(self):
@@ -14,10 +15,6 @@ class Player(ABC):
 
     def set_side(self, side):
         self.side = side
-
-    @abstractmethod
-    def set_env(self, env):
-        return NotImplemented
     
     @abstractmethod
     def reset(self):
@@ -36,13 +33,11 @@ class Player(ABC):
 
 
 class HumanPlayer(Player):
-    def __init__(self):
+    def __init__(self, env: Environment):
         super().__init__()
         self.is_bot = False
-   
-    def set_env(self, env):
         self.env = env
-
+   
     def reset(self):
         self.env.reset()
 
@@ -87,11 +82,9 @@ class HumanPlayer(Player):
 
         return action
 
-    def advance(self, action, do_step):
-        if do_step:
-            _, reward, terminated, _ = self.env.step(action)
-            return terminated, reward
-        return None
+    def advance(self, action):
+        _, reward, terminated, _ = self.env.step(action)
+        return terminated, reward
 
 class NetworkMCTSPlayer(Player):
     def __init__(self, network: PolicyValueNetwork, game: str):
@@ -100,17 +93,13 @@ class NetworkMCTSPlayer(Player):
         self.is_bot = True
 
     def reset(self):
-        self.mcts.env.reset()
         self.mcts.reset()
-
-    def set_env(self, env):
-        self.mcts.set_env(env)
 
     def select_action(self):
         return self.mcts.search()
     
-    def advance(self, action, do_step):
-        return self.mcts.advance(action, do_step)
+    def advance(self, action):
+        return self.mcts.advance(action)
     
 class VanillaMCTSPlayer(Player):
     def __init__(self):
@@ -119,14 +108,10 @@ class VanillaMCTSPlayer(Player):
         self.is_bot = True
 
     def reset(self):
-        self.mcts.env.reset()
         self.mcts.reset()
 
-    def set_env(self, env):
-        self.mcts.set_env(env)
-
-    def advance(self, action, do_step):
-        return self.mcts.advance(action, do_step)
+    def advance(self, action):
+        return self.mcts.advance(action)
     
     def select_action(self):
         return self.mcts.search()
@@ -139,14 +124,9 @@ class RandomPlayer(Player):
     def reset(self):
         self.env.reset()
 
-    def set_env(self, env):
-        self.env = env
-
-    def advance(self, action, do_step):
-        if do_step:
-            _, reward, terminated, _ = self.env.step(action)
-            return terminated, reward
-        return None
+    def advance(self, action):
+        _, reward, terminated, _ = self.env.step(action)
+        return terminated, reward
 
     def select_action(self):
         legal_action = self.env.get_legal_actions()
