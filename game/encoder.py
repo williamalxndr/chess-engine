@@ -8,15 +8,8 @@ from abc import ABC, abstractmethod
 device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
 
 
-# ─────────────────────────────────────────────
-# Base encoder
-# ─────────────────────────────────────────────
-
 class ChessEncoder(ABC):
-    """
-    Abstract base class for chess state encoders.
-    Subclasses define how many channels they produce and how they encode/decode a board.
-    """
+    """Base class for chess state encoders."""
 
     _registry: dict[str, type["ChessEncoder"]] = {}
     LATEST_VERSION = "ChessEncoderV2"
@@ -28,42 +21,37 @@ class ChessEncoder(ABC):
     @property
     @abstractmethod
     def channels(self) -> int:
+        """Number of planes in the encoded tensor."""
         pass
 
     @abstractmethod
     def encode(self, board: chess.Board) -> torch.Tensor:
+        """Encode board to float32 tensor of shape (channels, 8, 8)."""
         pass
 
     @abstractmethod
     def decode(self, state) -> chess.Board:
+        """Decode encoded state back into a chess.Board."""
         pass
 
     @classmethod
     def create(cls, version: str = "latest") -> "ChessEncoder":
-        """
-        Factory method.
-
-        Args:
-            version: 'latest', 'V1', 'V2', or full class name 'ChessEncoderV1'.
-
-        Returns:
-            ChessEncoder instance.
-        """
+        """Factory — accepts 'latest', 'V1', 'V2', or full class name."""
         if version.lower() == "latest":
             name = cls.LATEST_VERSION
         elif version.startswith("ChessEncoder"):
             name = version
         else:
             name = f"ChessEncoder{version}"
-
         if name not in ChessEncoder._registry:
             raise ValueError(f"Unknown encoder '{name}'. Available: {list(ChessEncoder._registry)}")
         return ChessEncoder._registry[name]()
 
-    # ── shared encode helpers ───────────────────────────────────────────────
+    # ── encode helpers ──────────────────────────────────────────────────────
 
     @staticmethod
     def _piece_planes(board: chess.Board, state: np.ndarray, offset: int = 0):
+        """Fill channels [offset, offset+12) with piece bitboards."""
         for piece_type in chess.PIECE_TYPES:
             for color in [chess.WHITE, chess.BLACK]:
                 channel = offset + (piece_type - 1) + (0 if color == chess.WHITE else 6)
@@ -85,19 +73,19 @@ class ChessEncoder(ABC):
 
     @staticmethod
     def _castling_planes(board: chess.Board, state: np.ndarray, offset: int):
+        """Fill 4 channels: W O-O, W O-O-O, B O-O, B O-O-O."""
         state[offset + 0, :, :] = float(board.has_kingside_castling_rights(chess.WHITE))
         state[offset + 1, :, :] = float(board.has_queenside_castling_rights(chess.WHITE))
         state[offset + 2, :, :] = float(board.has_kingside_castling_rights(chess.BLACK))
         state[offset + 3, :, :] = float(board.has_queenside_castling_rights(chess.BLACK))
 
-    # ── shared decode helpers ───────────────────────────────────────────────
+    # ── decode helpers ──────────────────────────────────────────────────────
 
     @staticmethod
     def _decode_base(state: np.ndarray) -> chess.Board:
         """Reconstruct pieces, ep, castling, turn from channels 0-17."""
         board = chess.Board(fen=None)
         board.clear()
-
         piece_types = [chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN, chess.KING]
         for channel in range(12):
             piece_type = piece_types[channel % 6]
@@ -106,14 +94,12 @@ class ChessEncoder(ABC):
                 for col in range(8):
                     if state[channel, row, col] == 1.0:
                         board.set_piece_at(chess.square(col, 7 - row), chess.Piece(piece_type, color))
-
         board.ep_square = None
         for row in range(8):
             for col in range(8):
                 if state[12, row, col] == 1.0:
                     board.ep_square = chess.square(col, 7 - row)
                     break
-
         castling = 0
         if state[13, 0, 0] == 1.0: castling |= chess.BB_H1
         if state[14, 0, 0] == 1.0: castling |= chess.BB_A1
@@ -129,66 +115,50 @@ class ChessEncoder(ABC):
             return state.cpu().numpy()
         return state
 
-    # ── shared feature helpers ──────────────────────────────────────────────
+    # ── feature helpers ─────────────────────────────────────────────────────
 
-    # Piece values (king excluded from material calculations)
     PIECE_VALUES = {
-        chess.PAWN: 1.0,
-        chess.KNIGHT: 3.0,
-        chess.BISHOP: 3.5,
-        chess.ROOK: 5.0,
-        chess.QUEEN: 9.0,
+        chess.PAWN: 1.0, chess.KNIGHT: 3.0, chess.BISHOP: 3.5,
+        chess.ROOK: 5.0, chess.QUEEN: 9.0,
     }
-    MAX_MATERIAL = 39.0   # sum of all non-king piece values
-    MAX_LEGAL    = 218.0  # theoretical max legal moves in chess
+    MAX_MATERIAL = 39.0
+    MAX_LEGAL    = 218.0
 
     @staticmethod
     def _king_zone_squares(board: chess.Board, color: chess.Color) -> list[int]:
-        """Return list of squares in the 3x3 area around the king of `color`."""
+        """Squares in the 3x3 area around the king of `color`."""
         king_sq = board.king(color)
         if king_sq is None:
             return []
-        king_file = chess.square_file(king_sq)
-        king_rank = chess.square_rank(king_sq)
-        squares = []
-        for df in [-1, 0, 1]:
-            for dr in [-1, 0, 1]:
-                f, r = king_file + df, king_rank + dr
-                if 0 <= f <= 7 and 0 <= r <= 7:
-                    squares.append(chess.square(f, r))
-        return squares
+        kf, kr = chess.square_file(king_sq), chess.square_rank(king_sq)
+        return [
+            chess.square(kf + df, kr + dr)
+            for df in [-1, 0, 1] for dr in [-1, 0, 1]
+            if 0 <= kf + df <= 7 and 0 <= kr + dr <= 7
+        ]
 
     @classmethod
     def _attacked_material_value(cls, board: chess.Board, attacker_color: chess.Color, target_color: chess.Color) -> float:
-        """
-        Total value of `target_color` pieces that are attacked by `attacker_color`.
-        King is excluded from the value sum.
-        """
-        total = 0.0
-        for piece_type, value in cls.PIECE_VALUES.items():
-            for sq in board.pieces(piece_type, target_color):
-                if board.is_attacked_by(attacker_color, sq):
-                    total += value
-        return total
+        """Total value of target_color pieces attacked by attacker_color (king excluded)."""
+        return sum(
+            value
+            for piece_type, value in cls.PIECE_VALUES.items()
+            for sq in board.pieces(piece_type, target_color)
+            if board.is_attacked_by(attacker_color, sq)
+        )
 
     @classmethod
     def _pieces_around_king(cls, board: chess.Board, king_color: chess.Color, piece_color: chess.Color) -> int:
-        """Count pieces of `piece_color` within the 3x3 zone around `king_color`'s king."""
+        """Count piece_color pieces within the 3x3 zone around king_color's king."""
         zone = set(cls._king_zone_squares(board, king_color))
-        count = 0
-        for sq in zone:
-            piece = board.piece_at(sq)
-            if piece is not None and piece.color == piece_color:
-                count += 1
-        return count
+        return sum(
+            1 for sq in zone
+            if (p := board.piece_at(sq)) is not None and p.color == piece_color
+        )
 
     @classmethod
     def _king_zone_attack_value(cls, board: chess.Board, king_color: chess.Color, attacker_color: chess.Color) -> float:
-        """
-        Total value of `attacker_color` pieces that attack any square
-        in the 3x3 zone around `king_color`'s king.
-        Each attacker piece is counted once regardless of how many zone squares it attacks.
-        """
+        """Total value of attacker_color pieces attacking any square in the 3x3 king zone. Each attacker counted once."""
         zone = set(cls._king_zone_squares(board, king_color))
         attackers_seen = set()
         total = 0.0
@@ -196,78 +166,60 @@ class ChessEncoder(ABC):
             for piece_type, value in cls.PIECE_VALUES.items():
                 for attacker_sq in board.attackers(attacker_color, sq):
                     piece = board.piece_at(attacker_sq)
-                    if (piece is not None
-                            and piece.piece_type == piece_type
-                            and attacker_sq not in attackers_seen):
+                    if piece is not None and piece.piece_type == piece_type and attacker_sq not in attackers_seen:
                         attackers_seen.add(attacker_sq)
                         total += value
         return total
 
-
-
     @staticmethod
-    def _pawn_shield(board, color) -> int:
-        """Ally pawns in 3 squares directly in front of king. Max=3."""
+    def _pawn_shield(board: chess.Board, color: chess.Color) -> int:
+        """Ally pawns in the 3 squares directly in front of the king. Max=3."""
         king_sq = board.king(color)
         if king_sq is None:
             return 0
-        import chess as _chess
-        king_file = _chess.square_file(king_sq)
-        king_rank = _chess.square_rank(king_sq)
-        shield_rank = king_rank + (1 if color == _chess.WHITE else -1)
+        kf, kr = chess.square_file(king_sq), chess.square_rank(king_sq)
+        shield_rank = kr + (1 if color == chess.WHITE else -1)
         if not (0 <= shield_rank <= 7):
             return 0
-        count = 0
-        for df in [-1, 0, 1]:
-            f = king_file + df
-            if 0 <= f <= 7:
-                sq = _chess.square(f, shield_rank)
-                piece = board.piece_at(sq)
-                if piece is not None and piece.piece_type == _chess.PAWN and piece.color == color:
-                    count += 1
-        return count
+        return sum(
+            1 for df in [-1, 0, 1]
+            if 0 <= kf + df <= 7
+            and (p := board.piece_at(chess.square(kf + df, shield_rank))) is not None
+            and p.piece_type == chess.PAWN and p.color == color
+        )
 
     @staticmethod
-    def _open_files_near_king(board, color) -> int:
-        """Open files (no pawn of either color) among king_file-1,0,+1. Max=3."""
+    def _open_files_near_king(board: chess.Board, color: chess.Color) -> int:
+        """Files with no pawn of either color among king_file-1, king_file, king_file+1. Max=3."""
         king_sq = board.king(color)
         if king_sq is None:
             return 0
-        import chess as _chess
-        king_file = _chess.square_file(king_sq)
-        open_count = 0
-        for df in [-1, 0, 1]:
-            f = king_file + df
-            if not (0 <= f <= 7):
-                continue
-            file_has_pawn = any(
-                board.piece_at(_chess.square(f, r)) is not None and
-                board.piece_at(_chess.square(f, r)).piece_type == _chess.PAWN
+        kf = chess.square_file(king_sq)
+        return sum(
+            1 for df in [-1, 0, 1]
+            if 0 <= kf + df <= 7
+            and not any(
+                (p := board.piece_at(chess.square(kf + df, r))) is not None and p.piece_type == chess.PAWN
                 for r in range(8)
             )
-            if not file_has_pawn:
-                open_count += 1
-        return open_count
+        )
 
     @staticmethod
-    def _doubled_pawns(board, color) -> int:
-        """
-        Count ally pawns that are on a file shared with at least one other ally pawn.
-        Max = 8 (all pawns doubled). Normalize by /8.0.
-        """
-        import chess as _chess
+    def _doubled_pawns(board: chess.Board, color: chess.Color) -> int:
+        """Ally pawns on a file shared with at least one other ally pawn. Max=8."""
         file_counts = [0] * 8
-        for sq in board.pieces(_chess.PAWN, color):
-            file_counts[_chess.square_file(sq)] += 1
-        return sum(count for count in file_counts if count >= 2)
+        for sq in board.pieces(chess.PAWN, color):
+            file_counts[chess.square_file(sq)] += 1
+        return sum(c for c in file_counts if c >= 2)
+
 
 # ─────────────────────────────────────────────
-# V1: original 21-channel encoder (legacy)
+# V1 — 21 channels (legacy)
 # ─────────────────────────────────────────────
 
 class ChessEncoderV1(ChessEncoder):
     """
-    Original 21-channel encoder.
+    21-channel encoder.
 
     Channels:
         0-5   White pieces  (P N B R Q K)
@@ -306,12 +258,12 @@ class ChessEncoderV1(ChessEncoder):
 
 
 # ─────────────────────────────────────────────
-# V2: 30 channel
+# V2 — 30 channels
 # ─────────────────────────────────────────────
 
 class ChessEncoderV2(ChessEncoder):
     """
-    27-channel encoder with richer strategic features.
+    30-channel encoder with strategic features.
     All scalar channels fill the entire 8x8 plane with one normalized value.
 
     Channels:
@@ -324,29 +276,17 @@ class ChessEncoderV2(ChessEncoder):
         16    Black queenside castling
         17    Turn (1 = White)
         18    In check
-        19    Twofold repetition warning:
-                position seen exactly twice total
-                (is_repetition(1) and not is_repetition(2))
-        20    Current player legal move count / 218
-        21    Ally attacked material value / 39
-                (value of current player's pieces attacked by opponent)
-        22    Enemy attacked material value / 39
-                (value of opponent's pieces attacked by current player)
+        19    Twofold repetition warning (is_repetition(1) and not is_repetition(2))
+        20    Current player legal moves / 218
+        21    Ally attacked material / 39
+        22    Enemy attacked material / 39
         23    Ally pieces in 3×3 king zone / 8
-                (current player's pieces around their own king)
         24    Enemy pieces in 3×3 king zone / 8
-                (opponent's pieces around current player's king)
         25    Total pieces remaining / 32
         26    King zone attack value / 39
-                (total value of opponent pieces attacking squares
-                 in the 3×3 zone around current player's king;
-                 each attacker counted once)
         27    Pawn shield / 3
-                (ally pawns in 3 squares directly in front of current player's king)
         28    Open files near king / 3
-                (files with no pawn of either color among king_file-1, king_file, king_file+1)
         29    Doubled pawns / 8
-                (ally pawns on a file shared with at least one other ally pawn)
     """
 
     @property
@@ -355,90 +295,44 @@ class ChessEncoderV2(ChessEncoder):
 
     def encode(self, board: chess.Board) -> torch.Tensor:
         state = np.zeros((30, 8, 8), dtype=np.float32)
-
-        # 0-11: piece planes
         self._piece_planes(board, state, offset=0)
-
-        # 12: en passant
         self._ep_plane(board, state, channel=12)
-
-        # 13-16: castling
         self._castling_planes(board, state, offset=13)
-
-        # 17: turn
         state[17, :, :] = float(board.turn == chess.WHITE)
-
-        # 18: in check
         state[18, :, :] = float(board.is_check())
-
-        # 19: twofold repetition warning
         state[19, :, :] = float(board.is_repetition(1) and not board.is_repetition(2))
-
-        # perspective
-        me  = board.turn
-        opp = not board.turn
-
-        # 20: current player legal move count / 218
+        me, opp = board.turn, not board.turn
         state[20, :, :] = len(list(board.legal_moves)) / self.MAX_LEGAL
-
-        # 21: ally attacked material value / 39
         state[21, :, :] = self._attacked_material_value(board, opp, me) / self.MAX_MATERIAL
-
-        # 22: enemy attacked material value / 39
         state[22, :, :] = self._attacked_material_value(board, me, opp) / self.MAX_MATERIAL
-
-        # 23: ally pieces in 3x3 king zone / 8
         state[23, :, :] = self._pieces_around_king(board, me, me) / 8.0
-
-        # 24: enemy pieces in 3x3 king zone / 8
         state[24, :, :] = self._pieces_around_king(board, me, opp) / 8.0
-
-        # 25: total pieces remaining / 32
-        total_pieces = sum(
-            len(board.pieces(pt, color))
-            for pt in chess.PIECE_TYPES
-            for color in [chess.WHITE, chess.BLACK]
-        )
-        state[25, :, :] = total_pieces / 32.0
-
-        # 26: king zone attack value / 39
+        state[25, :, :] = sum(len(board.pieces(pt, c)) for pt in chess.PIECE_TYPES for c in [chess.WHITE, chess.BLACK]) / 32.0
         state[26, :, :] = self._king_zone_attack_value(board, me, opp) / self.MAX_MATERIAL
-
-        # 27: pawn shield / 3
         state[27, :, :] = self._pawn_shield(board, me) / 3.0
-
-        # 28: open files near king / 3
         state[28, :, :] = self._open_files_near_king(board, me) / 3.0
-
-        # 29: doubled pawns / 8
         state[29, :, :] = self._doubled_pawns(board, me) / 8.0
-
         return torch.from_numpy(state)
 
     def decode(self, state) -> chess.Board:
-        """
-        Decode a (27, 8, 8) V2 state.
-        Channels 20-29 are derived features — not restored (would need the
-        original board state to recompute anyway). Only pieces, ep,
-        castling, and turn are reconstructed.
-        """
-        state = self._to_numpy(state)
-        return self._decode_base(state)
+        """Channels 20-29 are derived — only pieces, ep, castling, turn are reconstructed."""
+        return self._decode_base(self._to_numpy(state))
 
 
 # ─────────────────────────────────────────────
-# Legacy functional API (backward compat)
+# Legacy functional API
 # ─────────────────────────────────────────────
 
-_default_encoder = ChessEncoderV2()
+_v1 = ChessEncoderV1()
+_v2 = ChessEncoderV2()
 
 def encode_chess_state(board: chess.Board) -> torch.Tensor:
     """Backward-compatible wrapper — uses ChessEncoderV1."""
-    return _default_encoder.encode(board)
+    return _v1.encode(board)
 
 def decode_chess_state(state) -> chess.Board:
     """Backward-compatible wrapper — uses ChessEncoderV1."""
-    return _default_encoder.decode(state)
+    return _v1.decode(state)
 
 
 # ─────────────────────────────────────────────
@@ -451,7 +345,6 @@ def move_to_int(move: chess.Move) -> int:
     from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
     to_file = chess.square_file(to_sq); to_rank = chess.square_rank(to_sq)
     dx = to_file - from_file; dy = to_rank - from_rank
-
     if promo in [chess.KNIGHT, chess.BISHOP, chess.ROOK]:
         direction = 0 if dx == 0 else (1 if dx > 0 else 2)
         piece = {chess.KNIGHT: 0, chess.BISHOP: 1, chess.ROOK: 2}[promo]
@@ -466,7 +359,6 @@ def move_to_int(move: chess.Move) -> int:
         direction = queen_dir_map[(sign_x, sign_y)]
         distance = max(abs(dx), abs(dy))
         plane_index = (direction * 7) + (distance - 1)
-
     return (from_sq * 73) + plane_index
 
 
@@ -475,7 +367,6 @@ def int_to_move(action: int, board: chess.Board = None) -> chess.Move:
     from_sq = action // 73; plane_index = action % 73
     from_file = chess.square_file(from_sq); from_rank = chess.square_rank(from_sq)
     promo = None
-
     if plane_index < 56:
         direction = plane_index // 7; distance = (plane_index % 7) + 1
         dir_map = [(0,1),(1,1),(1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1)]
@@ -496,6 +387,5 @@ def int_to_move(action: int, board: chess.Board = None) -> chess.Move:
         dx = 0 if direction == 0 else (1 if direction == 1 else -1)
         dy = 1 if from_rank == 6 else -1
         to_file = from_file + dx; to_rank = from_rank + dy
-
     to_sq = chess.square(to_file, to_rank)
     return chess.Move(from_sq, to_sq, promotion=promo)
