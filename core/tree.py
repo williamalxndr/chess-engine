@@ -7,6 +7,7 @@ import torch
 from core.network import PolicyValueNetwork, NetworkFactory
 from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
+import config
 
 
 class BaseMCTS(ABC):
@@ -14,7 +15,7 @@ class BaseMCTS(ABC):
     Base class for MCTS
     """
 
-    def __init__(self, rules: Rules, num_rollout=1000, batch_size=50, verbose=True, seed=42):
+    def __init__(self, game: str, num_rollout=1000, batch_size=50, verbose=True, seed=42):
         """
         Build the search tree and create the root node.
 
@@ -24,7 +25,9 @@ class BaseMCTS(ABC):
             verbose (bool): whether to print log messages.
             seed (int): seed for the random number generator.
         """
-        self.rules = rules
+        if game.lower() not in config.LISTED_GAMES:
+            raise ValueError(f"Game not listed, listed games: {config.LISTED_GAMES}")
+        self.rules = Rules.get(game=game)
         self.num_rollout = num_rollout
         self.batch_size = batch_size
         self.verbose = verbose
@@ -329,8 +332,7 @@ class BaseMCTS(ABC):
 
 
 class VanillaMCTS(BaseMCTS):
-    def __init__(self, rules: Rules, num_rollout=1000,
-                 exploration_constant=1.41, verbose=True, seed=42):
+    def __init__(self, game: str, num_rollout=1000, exploration_constant=1.41, verbose=True, seed=42):
         """
         MCTS with UCT selection and random rollouts (no neural network).
 
@@ -341,7 +343,7 @@ class VanillaMCTS(BaseMCTS):
             verbose (bool): whether to print log messages.
             seed (int): random number generator seed.
         """
-        super().__init__(rules=rules, num_rollout=num_rollout, verbose=verbose, seed=seed)
+        super().__init__(game=game, num_rollout=num_rollout, verbose=verbose, seed=seed)
         self.exploration_constant = exploration_constant
 
     def _has_been_expanded(self, node: Node) -> bool:

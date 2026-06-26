@@ -4,48 +4,67 @@ import numpy as np
 import torch
 from abc import ABC, abstractmethod
 
+from core.utils import resolve_latest
+
 
 device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
 
+from abc import ABC, abstractmethod
+import torch
 
-class ChessEncoder(ABC):
-    """Base class for chess state encoders."""
 
-    _registry: dict[str, type["ChessEncoder"]] = {}
-    LATEST_VERSION = "ChessEncoderV2"
+class Encoder(ABC):
+    _registry: dict[str, type["Encoder"]] = {}   # class registry
+    _instances: dict[str, "Encoder"] = {}        # singleton cache
+
+    _GAME_PREFIX: dict[str, str] = {
+        "chess":     "ChessEncoder",
+        "tictactoe": "TicTacToeEncoder",
+    }
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        ChessEncoder._registry[cls.__name__] = cls
+        Encoder._registry[cls.__name__] = cls
+
+    @classmethod
+    def get(cls, game: str, version: str = "latest") -> "Encoder":
+        game_key = game.lower()
+        if game_key not in cls._GAME_PREFIX:
+            raise ValueError(f"Unknown game '{game}'. Available: {list(cls._GAME_PREFIX)}")
+
+        prefix = cls._GAME_PREFIX[game_key]
+
+        if version.lower() == "latest":
+            key = resolve_latest(prefix, cls._registry)
+        elif version.startswith(prefix):
+            key = version
+        else:
+            v = version.upper() if version.upper().startswith("V") else f"V{version}"
+            key = f"{prefix}{v}"
+
+        if key not in cls._registry:
+            available = [k for k in cls._registry if k.startswith(prefix)]
+            raise ValueError(f"Unknown encoder '{key}'. Available: {available}")
+
+        if key not in cls._instances:
+            cls._instances[key] = cls._registry[key]()
+
+        return cls._instances[key]
 
     @property
     @abstractmethod
-    def channels(self) -> int:
-        """Number of planes in the encoded tensor."""
-        pass
+    def channels(self) -> int: ...
 
     @abstractmethod
-    def encode(self, board: chess.Board) -> torch.Tensor:
-        """Encode board to float32 tensor of shape (channels, 8, 8)."""
-        pass
+    def encode(self, state) -> torch.Tensor: ...
 
     @abstractmethod
-    def decode(self, state) -> chess.Board:
-        """Decode encoded state back into a chess.Board."""
-        pass
+    def decode(self, state): ...
 
-    @classmethod
-    def create(cls, version: str = "latest") -> "ChessEncoder":
-        """Factory — accepts 'latest', 'V1', 'V2', or full class name."""
-        if version.lower() == "latest":
-            name = cls.LATEST_VERSION
-        elif version.startswith("ChessEncoder"):
-            name = version
-        else:
-            name = f"ChessEncoder{version}"
-        if name not in ChessEncoder._registry:
-            raise ValueError(f"Unknown encoder '{name}'. Available: {list(ChessEncoder._registry)}")
-        return ChessEncoder._registry[name]()
+class TicTacToeEncoder(Encoder):
+    pass
+
+class ChessEncoder(Encoder):
 
     # ── encode helpers ──────────────────────────────────────────────────────
 
@@ -389,3 +408,10 @@ def int_to_move(action: int, board: chess.Board = None) -> chess.Move:
         to_file = from_file + dx; to_rank = from_rank + dy
     to_sq = chess.square(to_file, to_rank)
     return chess.Move(from_sq, to_sq, promotion=promo)
+
+
+
+if __name__ == "__main__":
+    encoder = Encoder.get("chess")
+
+    print(type(encoder).__name__)

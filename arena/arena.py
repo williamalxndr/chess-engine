@@ -8,7 +8,7 @@ from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
 from game.env import TicTacToe, Chess
 from arena.player import *
-from game.encoder import *
+from core.encoder import *
 
 
 class Arena:

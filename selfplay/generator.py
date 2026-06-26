@@ -6,7 +6,7 @@ import sys
 from core.tree import NetworkMCTS
 from core.network import PolicyValueNetwork, NetworkFactory
 from core.node import Node
-from game.encoder import *
+from core.encoder import *
 from selfplay.worker import GameWorker
 
 

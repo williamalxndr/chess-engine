@@ -1,9 +1,9 @@
 import numpy as np
 import chess
-import math
+import torch
 from abc import ABC, abstractmethod
 
-from game.encoder import *
+from core.encoder import move_to_int, int_to_move
 
 
 class IllegalBoardError(Exception):
@@ -15,31 +15,34 @@ class IllegalBoardError(Exception):
 
 
 class Rules(ABC):
-    """
-    Stateless game mechanics: legal moves, transitions, results, and
-    state encoding. Subclasses implement one specific game.
-    """
+    _registry: dict[str, type["Rules"]] = {}
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        Rules._registry[cls.__name__] = cls
+
+    @classmethod
+    def get(cls, game: str) -> "Rules":
+        _GAME_PREFIX = {
+            "chess":     "ChessRules",
+            "tictactoe": "TicTacToeRules",
+        }
+
+        game_key = game.lower()
+        if game_key not in _GAME_PREFIX:
+            raise ValueError(f"Unknown game '{game}'. Available: {list(_GAME_PREFIX)}")
+
+        key = _GAME_PREFIX[game_key]
+
+        if key not in cls._registry:
+            raise ValueError(f"Rules '{key}' not found in registry.")
+
+        return cls._registry[key]()
+    
+        
     @property
     @abstractmethod
-    def action_space_size(self):
-        """
-        Total number of distinct actions in this game.
-
-        Returns:
-            int: size of the action space.
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def encoded_channels(self):
-        """
-        Number of channels produced by encode().
-
-        Returns:
-            int: channel count of the encoded state.
-        """
+    def action_space_size(self) -> int:
         pass
 
     @abstractmethod
@@ -53,7 +56,7 @@ class Rules(ABC):
         pass
 
     @abstractmethod
-    def get_legal_actions(self, state):
+    def get_legal_actions(self, state) -> list:
         """
         Legal actions available in `state`.
 
@@ -66,7 +69,7 @@ class Rules(ABC):
         pass
 
     @abstractmethod
-    def get_whose_turn(self, state):
+    def get_whose_turn(self, state) -> int:
         """
         Which player is to move in `state`.
 
@@ -79,16 +82,7 @@ class Rules(ABC):
         pass
 
     @abstractmethod
-    def is_terminal(self, state):
-        """
-        Whether `state` ends the game.
-
-        Args:
-            state: the game state to query.
-
-        Returns:
-            bool: True if the game is over.
-        """
+    def is_terminal(self, state) -> bool:
         pass
 
     @abstractmethod
@@ -106,42 +100,10 @@ class Rules(ABC):
         pass
 
     @abstractmethod
-    def transition_state(self, state, action):
-        """
-        Return the new state after applying `action` to `state`.
-
-        Args:
-            state: the current game state.
-            action (int): the action to apply.
-
-        Returns:
-            state: the resulting game state (the input is not mutated).
-        """
-        pass
-
-    @abstractmethod
-    def encode(self, state) -> np.ndarray:
-        """
-        Encode `state` into a tensor the network can consume.
-
-        Args:
-            state: the game state to encode.
-
-        Returns:
-            np.ndarray: encoded state of shape (encoded_channels, H, W).
-        """
+    def transition_state(self, state, action: int):
         pass
 
     def rollout(self, state):
-        """
-        Play uniformly random moves from `state` until the game ends.
-
-        Args:
-            state: the game state to roll out from (copied, not mutated).
-
-        Returns:
-            int: the terminal result of the finished game.
-        """
         state = state.copy()
         while not self.is_terminal(state):
             legal = self.get_legal_actions(state)
@@ -152,37 +114,17 @@ class Rules(ABC):
 
 class TicTacToeRules(Rules):
     @property
-    def action_space_size(self):
+    def action_space_size(self) -> int:
         return 9
 
     @property
-    def encoded_channels(self):
-        return 1
-
-    @property
-    def avg_game_length(self):
+    def avg_game_length(self) -> int:
         return 8
 
     def base_state(self):
-        """
-        Returns:
-            np.ndarray: empty 3x3 board of ints (0 = empty).
-        """
         return np.zeros((3, 3), dtype=int)
 
-    def get_whose_turn(self, state):
-        """
-        Infer the player to move from the piece counts.
-
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            int: -1 for X, 1 for O.
-
-        Raises:
-            IllegalBoardError: if the piece counts cannot occur in a real game.
-        """
+    def get_whose_turn(self, state) -> int:
         unique, counts = np.unique(state, return_counts=True)
         counts_by_player = dict(zip(unique, counts))
         x = counts_by_player.get(-1, 0)
@@ -193,31 +135,10 @@ class TicTacToeRules(Rules):
             return 1
         raise IllegalBoardError("Board is illegal: inconsistent turn counts")
 
-    def get_legal_actions(self, state):
-        """
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            list[int]: indices (0-8) of the empty cells.
-        """
+    def get_legal_actions(self, state) -> list[int]:
         return [i for i in range(9) if state[divmod(i, 3)] == 0]
 
-    def transition_state(self, state, action, player=None):
-        """
-        Place the current player's mark and return the new board.
-
-        Args:
-            state (np.ndarray): the 3x3 board.
-            action (int): cell index (0-8) to play.
-            player (int): mark to place, or None to use the player to move.
-
-        Returns:
-            np.ndarray: a copy of the board with `action` played.
-
-        Raises:
-            ValueError: if the target cell is already occupied.
-        """
+    def transition_state(self, state, action: int, player=None):
         if player is None:
             player = self.get_whose_turn(state)
         row, col = divmod(action, 3)
@@ -227,17 +148,7 @@ class TicTacToeRules(Rules):
         new_state[row, col] = player
         return new_state
 
-    def check_winner(self, state, player):
-        """
-        Whether `player` has three in a row.
-
-        Args:
-            state (np.ndarray): the 3x3 board.
-            player (int): the player to check (-1 or 1).
-
-        Returns:
-            bool: True if that player has won.
-        """
+    def check_winner(self, state, player) -> bool:
         for i in range(3):
             if np.all(state[i, :] == player) or np.all(state[:, i] == player):
                 return True
@@ -245,149 +156,57 @@ class TicTacToeRules(Rules):
             return True
         return False
 
-    def check_draw(self, state):
-        """
-        Whether the board is full (no empty cells).
-
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            bool: True if the board is full.
-        """
+    def check_draw(self, state) -> bool:
         return np.all(state != 0)
 
-    def is_terminal(self, state):
-        """
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            bool: True if either player has won or the board is full.
-        """
+    def is_terminal(self, state) -> bool:
         return self.check_winner(state, -1) or self.check_winner(state, 1) or self.check_draw(state)
 
     def get_result(self, state):
-        """
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            int: -1 if X won, 1 if O won, 0 for a draw, or None if unfinished.
-        """
-        if self.check_winner(state, -1):
-            return -1
-        if self.check_winner(state, 1):
-            return 1
-        if self.check_draw(state):
-            return 0
+        if self.check_winner(state, -1): return -1
+        if self.check_winner(state, 1):  return 1
+        if self.check_draw(state):       return 0
         return None
 
     def encode(self, state):
-        """
-        Args:
-            state (np.ndarray): the 3x3 board.
-
-        Returns:
-            torch.Tensor: the board as float32 with shape (1, 3, 3).
-        """
         return torch.tensor(state[np.newaxis, :, :].astype(np.float32))
 
 
 class ChessRules(Rules):
     @property
-    def action_space_size(self):
+    def action_space_size(self) -> int:
         return 4672
 
     @property
-    def encoded_channels(self):
-        return 21
-    
-    @property
-    def avg_game_length(self):
+    def avg_game_length(self) -> int:
         return 80
 
     def base_state(self):
-        """
-        Returns:
-            chess.Board: a board in the standard starting position.
-        """
         return chess.Board()
 
-    def get_whose_turn(self, board):
-        """
-        Args:
-            board (chess.Board): the current board.
-
-        Returns:
-            int: -1 if White is to move, 1 if Black is to move.
-        """
+    def get_whose_turn(self, board) -> int:
         return -1 if board.turn else 1
 
-    def get_legal_actions(self, board):
-        """
-        Args:
-            board (chess.Board): the current board.
-
-        Returns:
-            list[int]: legal moves encoded as integer action indices.
-        """
+    def get_legal_actions(self, board) -> list[int]:
         return [move_to_int(move) for move in board.legal_moves]
 
-    def is_terminal(self, board):
-        """
-        Args:
-            board (chess.Board): the current board.
-
-        Returns:
-            bool: True if the game is over (mate, stalemate, draw, etc.).
-        """
+    def is_terminal(self, board) -> bool:
         return board.is_game_over() or board.is_repetition(3)
 
     def get_result(self, board):
-        """
-        Args:
-            board (chess.Board): the current board.
-
-        Returns:
-            int: -1 if White won, 1 if Black won, 0 for a draw, or None if
-                the game is not over.
-        """
         if board.is_repetition(3):
             return 0
-
         RESULT_MAP = {"1-0": -1, "0-1": 1, "1/2-1/2": 0, "*": None}
         return RESULT_MAP[board.result()]
 
     def transition_state(self, board, action: int, player=None):
-        """
-        Push the move for `action` and return the new board.
-
-        Args:
-            board (chess.Board): the current board.
-            action (int): the integer action index of the move to play.
-            player (int): unused; kept for interface compatibility.
-
-        Returns:
-            chess.Board: a copy of the board with the move played.
-
-        Raises:
-            ValueError: if the action is not legal on this board.
-        """
         board_copy = board.copy(stack=8)
         move = int_to_move(action, board_copy)
         board_copy.push(move)
         return board_copy
+    
 
-    def encode(self, state):
-        """
-        Args:
-            state (chess.Board): the board to encode.
+if __name__ == "__main__":
+    rules = Rules.get("chess")
 
-        Returns:
-            torch.Tensor: float32 tensor of shape (21, 8, 8).
-        """
-        return encode_chess_state(state)
-
-
-RULES_REGISTRY = {"tictactoe": TicTacToeRules(), "chess": ChessRules()}
+    print(type(rules).__name__)
