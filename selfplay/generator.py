@@ -8,14 +8,28 @@ from core.network import PolicyValueNetwork, NetworkFactory
 from core.node import Node
 from core.encoder import *
 from selfplay.worker import GameWorker
+from core import config
+from game.rules import Rules
 
 
 class SelfPlayGenerator:
-    def __init__(self, network: PolicyValueNetwork, num_rollout=100, batch_size=50, seed=42):
-        self.network = network
-        self.rules = network.rules
+    def __init__(self, game: str, version: str = "latest",
+                 file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+                 num_rollout: int = 100, batch_size: int = 50, seed: int = 42):
+        self.game = game
+        self.version = version
+        self.file_name = file_name
+        self.parent_dir = parent_dir
+        self.path = path
         self.num_rollout = num_rollout
         self.batch_size = batch_size
+        self.rules = Rules.get(game=game)
+
+        self.network = config.load_network(
+            path=path, game=game, version=version,
+            file_name=file_name, parent_dir=parent_dir,
+        )
+        self.network.eval()
 
         self.workers: dict[int, GameWorker] = {}
         self.rng = np.random.default_rng(seed=seed)
@@ -26,11 +40,11 @@ class SelfPlayGenerator:
         return len(self.workers)
 
     def spawn(self, n):
-        """Create n new workers, each with a fresh random seed."""
         for _ in range(n):
             seed = int(self.rng.integers(0, 1000000))
             self.workers[self._next_id] = GameWorker(
-                self.network,
+                game=self.game, version=self.version,
+                file_name=self.file_name, parent_dir=self.parent_dir, path=self.path,
                 seed=seed,
                 num_rollout=self.num_rollout,
                 batch_size=self.batch_size,
@@ -112,9 +126,11 @@ class SelfPlayGenerator:
             policy = worker.get_policy()
             action = worker.sample_action(policy)
 
-            encoded = worker.mcts.rules.encode(state)
+            encoded = worker.mcts.encoder.encode(state)
             game_over, result = worker.advance(action)
             step_results[wid] = (encoded, torch.tensor(policy), game_over, result)
+        
+
         return step_results
 
     def generate(self, num_games=1):
@@ -143,21 +159,30 @@ class SelfPlayGenerator:
 
         while active_workers:
             step_results = self.search_step(active_workers)
+            print(".", end="", flush=True)
 
             for wid, (state, policy, game_over, result) in step_results.items():
                 trajectories[wid].append((state, policy))
                 if game_over:
                     results[wid] = result
                     active_workers.discard(wid)
+        print()
+
+        for wid, worker in self.workers.items():
+            board = worker.mcts.root.state
+            result = self.rules.get_result(board)
+            result_str = "1-0" if result == -1 else "0-1" if result == 1 else "1/2-1/2"
+            fen = board.fen().replace(" ", "_")
+            moves = len(trajectories[wid])
+            print(f"[DEBUG] Worker {wid:02d} | Moves: {moves} | Result: {result_str} | https://lichess.org/editor/{fen}")
+
 
         return [(trajectories[wid], results[wid]) for wid in trajectories]
 
 
         
 
-if __name__ == "__main__": 
-    network = PolicyValueNetwork.create("chess")
-    gen = SelfPlayGenerator(network=network, num_rollout=100, batch_size=50)
-
+if __name__ == "__main__":
+    gen = SelfPlayGenerator(game="chess", num_rollout=32, batch_size=32)
     gen.generate(3)
 

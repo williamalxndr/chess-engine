@@ -28,6 +28,8 @@ class Encoder(ABC):
 
     @classmethod
     def get(cls, game: str, version: str = "latest") -> "Encoder":
+        version = "latest" if version is None else version
+
         game_key = game.lower()
         if game_key not in cls._GAME_PREFIX:
             raise ValueError(f"Unknown game '{game}'. Available: {list(cls._GAME_PREFIX)}")

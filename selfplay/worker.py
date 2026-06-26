@@ -10,13 +10,16 @@ from core.node import Node
 
 
 class GameWorker:
-    def __init__(self, network: PolicyValueNetwork, seed: int=42, num_rollout=200, batch_size=50, add_noise=True):
+    def __init__(self, game: str, version: str = "latest",
+                 file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+                 seed: int = 42, num_rollout: int = 200, batch_size: int = 50, add_noise: bool = True):
+
         self.mcts = NetworkMCTS(
-            network=network,
-            num_rollout=num_rollout,
-            batch_size=batch_size,
-            seed=seed
-            )
+            game=game, version=version,
+            file_name=file_name, parent_dir=parent_dir, path=path,
+            num_rollout=num_rollout, batch_size=batch_size,
+            seed=seed, add_noise=add_noise,
+        )
         self.seed = seed
         self.rng = np.random.default_rng(seed)
 
@@ -61,7 +64,7 @@ class GameWorker:
     
     def get_encoded_current_state(self):
         state = self.get_current_state() 
-        return self.mcts.rules.encode(state)
+        return self.mcts.encoder.encode(state)
 
     def run_search(self):
         """
@@ -100,13 +103,13 @@ class GameWorker:
         policy = self.get_policy()
         action = self.sample_action(policy)
 
-        state = self.mcts.rules.encode(state)
+        state = self.mcts.encoder.encode(state)
         policy = torch.tensor(policy)
 
         game_over, result = self.mcts.advance(action)
         return state, policy, game_over, result
 
-    def run_game(self, display=False):
+    def run_game(self, display=True):
         self.reset()
         trajectory = []
 
@@ -139,11 +142,8 @@ class GameWorker:
         return trajectory, result        
         
 
-if __name__ == "__main__": 
-    net = PolicyValueNetwork.create(game="chess")
-    worker = GameWorker(network=net, seed=20, num_rollout=100, batch_size=1)
+if __name__ == "__main__":
+    worker = GameWorker(game="chess", seed=20, num_rollout=100, batch_size=40)
 
     for _ in range(1):
         print(worker.run_game())
-
-

@@ -7,15 +7,14 @@ import torch
 from core.network import PolicyValueNetwork, NetworkFactory
 from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
-import config
-
+from core import config
 
 class BaseMCTS(ABC):
     """
     Base class for MCTS
     """
 
-    def __init__(self, game: str, num_rollout=1000, batch_size=50, verbose=True, seed=42):
+    def __init__(self, game: str, version="latest", num_rollout=1000, batch_size=50, verbose=True, seed=42):
         """
         Build the search tree and create the root node.
 
@@ -28,6 +27,7 @@ class BaseMCTS(ABC):
         if game.lower() not in config.LISTED_GAMES:
             raise ValueError(f"Game not listed, listed games: {config.LISTED_GAMES}")
         self.rules = Rules.get(game=game)
+        self.encoder = config.get_encoder(game=game, version=version)
         self.num_rollout = num_rollout
         self.batch_size = batch_size
         self.verbose = verbose
@@ -400,30 +400,20 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, network: PolicyValueNetwork,
+    def __init__(self, game: str = None, version: str = None, file_name: str = None, parent_dir: str = None, path: str = None, 
                  num_rollout=1000, batch_size=50, 
                  c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
-                 add_noise=False, network_train=False, verbose=True):
-        """
-        MCTS guided by a policy-value network (AlphaZero-style PUCT).
-
-        Args:
-            network (PolicyValueNetwork): network producing priors and a value.
-            rules (Rules): game rules.
-            num_rollout (int): simulations per search().
-            c_puct (float): PUCT exploration weight.
-            epsilon (float): weight of the Dirichlet root noise (0 disables it).
-            seed (int): random number generator seed.
-            alpha (float): Dirichlet concentration parameter for root noise.
-            add_noise (bool): if False, epsilon is forced to 0.
-            network_train (bool): put the network in train() (True) or eval() mode.
-            verbose (bool): whether to print log messages.
-        """
-        rules = network.rules
-        super().__init__(rules=rules, num_rollout=num_rollout, batch_size=batch_size, verbose=verbose, seed=seed)
+                 add_noise=False, verbose=True):
+        
+        super().__init__(game=game, version=version,
+                         num_rollout=num_rollout, batch_size=batch_size, 
+                         verbose=verbose, seed=seed)
+        
+        self.network = config.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
         self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
-        self.network = network.to(self.device)
-        self.network.train(network_train)
+        self.network = self.network.to(self.device)
+
+        # Constants
         self.c_puct = c_puct
         self.epsilon = epsilon if add_noise else 0
         self.alpha = alpha
@@ -476,7 +466,7 @@ class NetworkMCTS(BaseMCTS):
         """
         Returns a tensor of (B x C x H x W) to be forwarded/evaluated by the network
         """
-        encoded_eval_states = [self.rules.encode(node.state) for node in eval_nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
+        encoded_eval_states = [self.encoder.encode(node.state) for node in eval_nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
         return torch.stack(encoded_eval_states).to(self.device)       
 
 
@@ -561,12 +551,16 @@ class NetworkMCTS(BaseMCTS):
             
 
 if __name__ == "__main__":
-    network = NetworkFactory.create("chess")
-    net_agent = NetworkMCTS(network=network, num_rollout=30, batch_size=10)
-    # vanilla_agent = VanillaMCTS(rules=ChessRules(), num_rollout=10)
+    agent1 = NetworkMCTS(game="chess", num_rollout=100, batch_size=10, add_noise=True, seed=42)
+    agent2 = NetworkMCTS(game="chess", num_rollout=100, batch_size=10, add_noise=True, seed=123)
+    agent3 = NetworkMCTS(game="chess", num_rollout=100, batch_size=10, add_noise=True, seed=999)
 
-    best_action_net = int_to_move(net_agent.search())
-    # best_action_vanilla = int_to_move(vanilla_agent.search())
+    print(f"Same network: {agent1.network is agent2.network is agent3.network}")
 
-    print(best_action_net)
+    action1 = agent1.search()
+    action2 = agent2.search()
+    action3 = agent3.search()
 
+    print(f"agent1 best move: {int_to_move(action1)}")
+    print(f"agent2 best move: {int_to_move(action2)}")
+    print(f"agent3 best move: {int_to_move(action3)}")

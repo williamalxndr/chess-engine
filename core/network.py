@@ -217,6 +217,8 @@ class NetworkFactory:
 
     @classmethod
     def create(cls, game: str, version: str = "latest") -> PolicyValueNetwork:
+        version = "latest" if version is None else version
+
         game_key = game.lower()
 
         if game_key not in cls._GAME_PREFIX:
