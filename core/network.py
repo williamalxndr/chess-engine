@@ -99,10 +99,11 @@ class PolicyValueNetwork(nn.Module, ABC):
 # ── Chess ─────────────────────────────────────────────────────────────────────
 
 class ChessNetwork(PolicyValueNetwork):
-    _encoder = None
+    encoder = None
+    game="chess"
 
     def __init__(self):
-        super().__init__(rules=Rules.get("chess"), encoder=self.__class__._encoder)
+        super().__init__(rules=Rules.get("chess"), encoder=self.__class__.encoder)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -113,16 +114,10 @@ class ChessNetwork(PolicyValueNetwork):
         # Extract version suffix 
         version = cls.__name__[len("ChessNetwork"):]
         if not version:
-            return  #
+            return 
 
-        encoder_class_name = f"ChessEncoder{version}"
-        if encoder_class_name not in Encoder._registry:
-            raise ValueError(
-                f"No matching encoder '{encoder_class_name}' for '{cls.__name__}'. "
-                f"Available: {list(Encoder._registry)}"
-            )
-
-        cls._encoder = Encoder.get(game="chess", version=version)
+        cls.version = version 
+        cls.encoder = Encoder.get(game="chess", version=version)
 
 
 class ChessNetworkV1(ChessNetwork):
