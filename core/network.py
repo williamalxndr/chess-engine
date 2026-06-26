@@ -9,7 +9,7 @@ import numpy as np
 import time
 
 from game.rules import Rules, TicTacToeRules, ChessRules, RULES_REGISTRY
-from game.encoder import encode_chess_state
+from game.encoder import ChessEncoder
 from core.node import Node
 
 
@@ -174,7 +174,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         return NetworkFactory.create(game)
 
 class ChessNetwork:
-    LATEST = "ChessNetworkV1"
+    LATEST = "ChessNetworkV2"
 
     def __new__(cls, rules: Rules, version: str = None):
         if version is not None:
@@ -210,6 +210,23 @@ class ChessNetworkV1(PolicyValueNetwork):
     @property
     def body_channels(self):
         return 32
+    
+class ChessNetworkV2(PolicyValueNetwork):
+    # 20 Residual block
+    # Encoded state channel: 30
+
+    def __init__(self, rules: Rules):
+        super().__init__(rules)
+
+    def _build_body(self) -> nn.Sequential:
+        layers = [ResidualBlock(30, 256, padding=1)]
+        for _ in range(19):
+            layers.append(ResidualBlock(256, 256, padding=1))
+        return nn.Sequential(*layers)
+
+    @property
+    def body_channels(self) -> int:
+        return 256
 
 
 class TicTacToeNetwork(PolicyValueNetwork):
