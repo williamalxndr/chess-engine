@@ -12,7 +12,7 @@ from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
 from selfplay.generator import SelfPlayGenerator
 from training.trainer import Trainer
-from training.profiler import profile_pipeline
+from training.profiler import profile_pipeline, profile_cpu
 from core import config
 
 
@@ -119,12 +119,7 @@ class Pipeline:
 
                 if iteration == 0:
                     self.network.eval()
-                    profile_pipeline(
-                        generate_fn=self.generate,
-                        train_step_fn=lambda: (self.network.train(), self.train_step()),
-                    )
-                    iteration += 1
-                    continue
+                    profile_cpu(generate_fn=self.generate)
 
                 self.network.eval()
                 self.generate()

@@ -62,6 +62,9 @@ class SelfPlayGenerator:
         Run one collect + forward + backprop cycle across PENDING workers only.
         Returns dict of sims_done this batch per worker.
         """
+        # ── Collect ───────────────────────────────────────────────────────────────
+        t0 = time.time()
+
         all_eval_nodes: list[Node] = []
         offsets: dict[int, tuple[int, int, int]] = {}  # wid -> (start, end, batch_sims_done)
 
@@ -75,14 +78,19 @@ class SelfPlayGenerator:
 
         if not all_eval_nodes:
             return {wid: data[2] for wid, data in offsets.items()}
+        
+        t1 = time.time()
 
-        # Forward G×B
+        # ── Forward G×B ───────────────────────────────────────────────────────────
         with torch.no_grad():
             policy_head, value_head = self.network.forward_nodes(all_eval_nodes)
 
         policies = policy_head.cpu().numpy()
         values = value_head.cpu().numpy()
 
+        t2 = time.time()
+
+        # ── Backprop ──────────────────────────────────────────────────────────────
         sims_done: dict[int, int] = {}
 
         for wid, (start, end, batch_sims_done) in offsets.items():
@@ -94,6 +102,9 @@ class SelfPlayGenerator:
             self.workers[wid].backpropagate(worker_nodes, worker_values)
 
             sims_done[wid] = len(worker_nodes) + batch_sims_done
+
+        t3 = time.time()
+        print(f"[DEBUG] nodes: {len(all_eval_nodes)} | collect: {t1-t0:.4f}s | inference: {t2-t1:.4f}s | backprop: {t3-t2:.4f}s")
 
         return sims_done    
     
@@ -159,14 +170,12 @@ class SelfPlayGenerator:
 
         while active_workers:
             step_results = self.search_step(active_workers)
-            print(".", end="", flush=True)
 
             for wid, (state, policy, game_over, result) in step_results.items():
                 trajectories[wid].append((state, policy))
                 if game_over:
                     results[wid] = result
                     active_workers.discard(wid)
-        print()
 
         for wid, worker in self.workers.items():
             board = worker.mcts.root.state
