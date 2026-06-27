@@ -410,8 +410,6 @@ class NetworkMCTS(BaseMCTS):
                          verbose=verbose, seed=seed)
         
         self.network = config.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
-        self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
-        self.network = self.network.to(self.device)
 
         # Constants
         self.c_puct = c_puct
@@ -467,7 +465,7 @@ class NetworkMCTS(BaseMCTS):
         Returns a tensor of (B x C x H x W) to be forwarded/evaluated by the network
         """
         encoded_eval_states = [self.encoder.encode(node.state) for node in eval_nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
-        return torch.stack(encoded_eval_states).to(self.device)       
+        return torch.stack(encoded_eval_states)
 
 
     def forward_nodes(self, eval_nodes: list[Node]):

@@ -42,6 +42,8 @@ class PolicyValueNetwork(nn.Module, ABC):
             nn.Linear(self.body_channels, 1),
             nn.Tanh()
         )
+        self.to(self.device)
+
 
     @abstractmethod
     def _build_body(self) -> nn.Sequential:
@@ -61,7 +63,7 @@ class PolicyValueNetwork(nn.Module, ABC):
 
     def forward_nodes(self, nodes: list[Node]):
         encode = self.encoder.encode
-        batch  = torch.stack([encode(n.state) for n in nodes]).to(self.device)
+        batch  = torch.stack([encode(n.state) for n in nodes])
         return self.forward(batch)
 
     def save(self, game: str, version: str, file_name: str, parent_dir: str = "checkpoints", path: str=None):

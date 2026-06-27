@@ -10,7 +10,6 @@ class Trainer:
         self.network = network
         self.optimizer = optimizer
         self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max)
-        self.device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
         
     def policy_loss(self, policy_logits, policy_true, epsilon=1e-15):
         log_probs = torch.nn.functional.log_softmax(policy_logits, dim=1)
@@ -27,9 +26,12 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)  
         self.network.train()
 
-        s = s.to(self.device)
-        pi = pi.to(self.device)
-        z = z.to(self.device)
+        device = next(self.network.parameters()).device
+
+        s  = s.to(device)
+        pi = pi.to(device)
+        z  = z.to(device)
+
 
         policy_head, value_head = self.network(s)
         
