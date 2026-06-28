@@ -11,6 +11,7 @@ from selfplay.worker import GameWorker
 from core import factory
 from game.rules import Rules
 from profiler import timing as prof
+from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 class SelfPlayGenerator:
     def __init__(self, 
@@ -84,7 +85,10 @@ class SelfPlayGenerator:
 
         # ── Forward G×B ───────────────────────────────────────────────────────────
         with torch.no_grad():
-            policy_head, value_head = self.network.forward_nodes(all_eval_nodes)
+            if isinstance(self.network, DataParallel) or isinstance(self.network, DistributedDataParallel):
+                policy_head, value_head = self.network.modules.forward_nodes(all_eval_nodes)
+            else:
+                policy_head, value_head = self.network.forward_nodes(all_eval_nodes)
 
         policies = policy_head.cpu().numpy()
         values = value_head.cpu().numpy()
