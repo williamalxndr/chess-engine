@@ -39,11 +39,12 @@ def build_network(game: str, version: str = "latest", dp=True) -> PolicyValueNet
     return _network_cache[cache_key]
 
 def load_network(
-    path: str = None,
-    game: str = None,
-    version: str = None,
-    file_name: str = None,
-    parent_dir: str = None,
+    path:       str  = None,
+    game:       str  = None,
+    version:    str  = None,
+    file_name:  str  = None,
+    parent_dir: str  = None,
+    dp:         bool = True
 ) -> PolicyValueNetwork:
     """
     Load or retrieve a cached network
@@ -56,7 +57,7 @@ def load_network(
     if path is None and file_name is None:
         if game is None:
             raise ValueError("'game' is required.")
-        return build_network(game=game, version=version or "latest")
+        return build_network(game=game, version=version or "latest", dp=dp)
 
     # Not both
     if path is not None and any(v is not None for v in [game, version, file_name]):

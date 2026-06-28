@@ -10,13 +10,16 @@ from core.node import Node
 
 
 class GameWorker:
-    def __init__(self, game: str, version: str = "latest",
+    def __init__(self, 
+                 game: str, version: str = "latest",
                  file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+                 network: PolicyValueNetwork = None,
                  seed: int = 42, num_rollout: int = 200, batch_size: int = 50, add_noise: bool = True):
 
         self.mcts = NetworkMCTS(
             game=game, version=version,
             file_name=file_name, parent_dir=parent_dir, path=path,
+            network=network,
             num_rollout=num_rollout, batch_size=batch_size,
             seed=seed, add_noise=add_noise,
         )

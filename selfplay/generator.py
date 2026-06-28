@@ -86,7 +86,7 @@ class SelfPlayGenerator:
         # ── Forward G×B ───────────────────────────────────────────────────────────
         with torch.no_grad():
             if isinstance(self.network, DataParallel) or isinstance(self.network, DistributedDataParallel):
-                policy_head, value_head = self.network.modules.forward_nodes(all_eval_nodes)
+                policy_head, value_head = self.network.module.forward_nodes(all_eval_nodes)
             else:
                 policy_head, value_head = self.network.forward_nodes(all_eval_nodes)
 

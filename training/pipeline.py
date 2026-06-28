@@ -77,6 +77,7 @@ class Pipeline:
         self.generator = SelfPlayGenerator(
             game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir, path=path,
+            network=network,
             num_rollout=num_rollout, batch_size=mcts_batch_size,
         )
         self.trainer = Trainer(
