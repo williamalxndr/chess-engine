@@ -63,4 +63,4 @@ if __name__ == "__main__":
     print(f"Single GPU : {t_single:.1f}s\n")
     print(f"Multi  GPU : {t_multi:.1f}s\n")
 
-    print(f"Speedup    : {t_multi / t_single:.2f}x")
+    print(f"Speedup    : {t_single / t_multi:.2f}x")
