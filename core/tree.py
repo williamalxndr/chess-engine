@@ -7,7 +7,7 @@ import torch
 from core.network import PolicyValueNetwork, NetworkFactory
 from game.rules import Rules, ChessRules, int_to_move
 from core.node import Node
-from core import config
+from core import factory
 
 class BaseMCTS(ABC):
     """
@@ -24,10 +24,10 @@ class BaseMCTS(ABC):
             verbose (bool): whether to print log messages.
             seed (int): seed for the random number generator.
         """
-        if game.lower() not in config.LISTED_GAMES:
-            raise ValueError(f"Game not listed, listed games: {config.LISTED_GAMES}")
+        if game.lower() not in factory.LISTED_GAMES:
+            raise ValueError(f"Game not listed, listed games: {factory.LISTED_GAMES}")
         self.rules = Rules.get(game=game)
-        self.encoder = config.get_encoder(game=game, version=version)
+        self.encoder = factory.get_encoder(game=game, version=version)
         self.num_rollout = num_rollout
         self.batch_size = batch_size
         self.verbose = verbose
@@ -409,7 +409,7 @@ class NetworkMCTS(BaseMCTS):
                          num_rollout=num_rollout, batch_size=batch_size, 
                          verbose=verbose, seed=seed)
         
-        self.network = config.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
+        self.network = factory.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
         # Constants
         self.c_puct = c_puct

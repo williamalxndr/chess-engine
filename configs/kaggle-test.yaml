@@ -1,0 +1,17 @@
+game: chess
+version: V2
+file_name: test
+
+mcts:
+  num_rollout: 128
+  mcts_batch_size: 16
+  num_selfplay: 2
+
+training:
+  duration: 0.1
+  steps_per_iter: 100
+  train_batch_size: 32
+
+logging:
+  kaggle: true
+  log_interval: 1

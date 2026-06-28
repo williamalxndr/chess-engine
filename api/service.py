@@ -23,10 +23,10 @@ class GameService(ABC):
 
 
 class TicTacToeService(GameService):
-    def __init__(self, network_path=config.DEFAULT_NETWORK_PATH, num_rollout=config.NUM_ROLLOUT):
+    def __init__(self, network_path=factory.DEFAULT_NETWORK_PATH, num_rollout=factory.NUM_ROLLOUT):
         super().__init__()
         self.network = PolicyValueNetwork.load(network_path)
-        self.bot = NetworkMCTS(self.network, num_rollout=num_rollout, seed=config.SEED)
+        self.bot = NetworkMCTS(self.network, num_rollout=num_rollout, seed=factory.SEED)
 
     def check_terminal(self, board):
         return TicTacToe.is_terminal(board)

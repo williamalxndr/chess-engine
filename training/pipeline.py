@@ -13,7 +13,8 @@ from selfplay.replay_buffer import ReplayBuffer
 from selfplay.generator import SelfPlayGenerator
 from training.trainer import Trainer
 from training.profiler import profile_pipeline, profile_cpu
-from core import config
+from core import factory
+from core.config import load_config
 
 
 class Pipeline:
@@ -53,7 +54,7 @@ class Pipeline:
         self.kaggle           = kaggle
 
         # Network
-        self.network = config.load_network(
+        self.network = factory.load_network(
             path=path, game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir,
         )
@@ -222,73 +223,50 @@ class Pipeline:
         self.network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--game",                   type=str,   default="chess")
-    parser.add_argument("--version",                type=str,   default="V2")
-    parser.add_argument("--file_name",              type=str,   default=None)
-    parser.add_argument("--iterations",             type=int,   default=99999)
-    parser.add_argument("--steps_per_iter",         type=int,   default=200)
-    parser.add_argument("--train_batch_size",       type=int,   default=32)
-    parser.add_argument("--mcts_batch_size",        type=int,   default=16)
-    parser.add_argument("--num_rollout",            type=int,   default=100)
-    parser.add_argument("--num_selfplay",           type=int,   default=2)
-    parser.add_argument("--duration",               type=float, default=None)
-    parser.add_argument("--verbose",                action="store_true", default=False)
-    parser.add_argument("--kaggle",                 action="store_true", default=False)
-    parser.add_argument("--log_interval",           type=int,   default=1)
-    parser.add_argument("--replay_buffer_max_size", type=int,   default=10000)
-    parser.add_argument("--kaggle_network",         type=str,   default=None)
-    parser.add_argument("--kaggle_buffer",          type=str,   default=None)
-    args = parser.parse_args()
+    cfg = load_config()
 
-    # ── Resolve network path ──────────────────────────────────────────────────
-    kaggle_network_path = Path(f"/kaggle/input/{args.kaggle_network}/{args.file_name}.pt") if args.kaggle_network else None
-    local_network_path  = Path(f"checkpoints/{args.game}/{args.version}/{args.file_name}.pt") if args.file_name else None
+    kaggle_network_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.network}/{cfg.file_name}.pt") if cfg.kaggle_datasets.network else None
+    local_network_path  = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
 
     if kaggle_network_path and kaggle_network_path.is_file():
         network_path, network_file_name = str(kaggle_network_path), None
         print(f"Network: Kaggle {kaggle_network_path}")
     elif local_network_path and local_network_path.is_file():
-        network_path, network_file_name = None, args.file_name
+        network_path, network_file_name = None, cfg.file_name
         print(f"Network loaded from local checkpoint {local_network_path}")
     else:
         network_path, network_file_name = None, None
         print("Network created")
 
-    # ── Resolve buffer path ───────────────────────────────────────────────────
-    kaggle_buffer_path = Path(f"/kaggle/input/{args.kaggle_buffer}/{args.file_name}_buffer.pt") if args.kaggle_buffer else None
+    kaggle_buffer_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.buffer}/{cfg.file_name}_buffer.pt") if cfg.kaggle_datasets.buffer else None
 
     if kaggle_buffer_path and kaggle_buffer_path.is_file():
         buffer_path, buffer_file_name = str(kaggle_buffer_path), None
         print(f"Buffer: Kaggle {kaggle_buffer_path}")
     else:
-        buffer_path, buffer_file_name = None, args.file_name
+        buffer_path, buffer_file_name = None, cfg.file_name
 
-    # ── Run ───────────────────────────────────────────────────────────────────
     pipeline = Pipeline(
-        game=args.game,
-        version=args.version,
+        game=cfg.game,
+        version=cfg.version,
         load_file_name=network_file_name,
-        save_file_name=args.file_name,
+        save_file_name=cfg.file_name,
         path=network_path,
         buffer_file_name=buffer_file_name,
         buffer_path=buffer_path,
-        iterations=args.iterations,
-        steps_per_iter=args.steps_per_iter,
-        train_batch_size=args.train_batch_size,
-        mcts_batch_size=args.mcts_batch_size,
-        num_rollout=args.num_rollout,
-        num_selfplay=args.num_selfplay,
-        replay_buffer_max_size=args.replay_buffer_max_size,
-        verbose=args.verbose,
-        kaggle=args.kaggle,
+        iterations=99999,
+        steps_per_iter=cfg.training.steps_per_iter,
+        train_batch_size=cfg.training.train_batch_size,
+        mcts_batch_size=cfg.mcts.mcts_batch_size,
+        num_rollout=cfg.mcts.num_rollout,
+        num_selfplay=cfg.mcts.num_selfplay,
+        replay_buffer_max_size=cfg.training.replay_buffer_max_size,
+        verbose=cfg.logging.verbose,
+        kaggle=cfg.logging.kaggle,
     )
 
     pipeline.train(
-        duration_hours=args.duration,
-        log_interval=args.log_interval,
+        duration_hours=cfg.training.duration,
+        log_interval=cfg.logging.log_interval,
     )

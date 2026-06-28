@@ -8,7 +8,7 @@ from core.network import PolicyValueNetwork, NetworkFactory
 from core.node import Node
 from core.encoder import *
 from selfplay.worker import GameWorker
-from core import config
+from core import factory
 from game.rules import Rules
 
 
@@ -25,7 +25,7 @@ class SelfPlayGenerator:
         self.batch_size = batch_size
         self.rules = Rules.get(game=game)
 
-        self.network = config.load_network(
+        self.network = factory.load_network(
             path=path, game=game, version=version,
             file_name=file_name, parent_dir=parent_dir,
         )
