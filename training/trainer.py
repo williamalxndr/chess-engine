@@ -2,8 +2,10 @@ from torch import optim
 import torch
 from torch import nn
 import torch.optim.lr_scheduler as lr_scheduler
+import time
 
 from core.network import PolicyValueNetwork
+from profiler import timing as prof
 
 class Trainer:
     def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam, T_max=100):
@@ -22,7 +24,9 @@ class Trainer:
         return loss
 
 
-    def step(self, s, pi, z):         
+    def step(self, s, pi, z):
+        start = time.time()
+
         self.optimizer.zero_grad(set_to_none=True)  
         self.network.train()
 
@@ -31,7 +35,6 @@ class Trainer:
         s  = s.to(device)
         pi = pi.to(device)
         z  = z.to(device)
-
 
         policy_head, value_head = self.network(s)
         
@@ -42,6 +45,10 @@ class Trainer:
         loss.backward()
 
         self.optimizer.step()
+
+        end = time.time()
+        network_optimize_time = end - start
+        prof.add(network_optimize=network_optimize_time) 
 
         return loss, p_loss, v_loss
     

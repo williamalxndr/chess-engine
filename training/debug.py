@@ -6,6 +6,7 @@ import torch
 from core import factory
 from core.config import load_config
 from training.pipeline import Pipeline
+from profiler import timing as prof
 
 cfg = load_config(["--config", "configs/kaggle-test.yaml"])
 
@@ -40,17 +41,26 @@ def run(dp: bool) -> float:
     return time.time() - start
 
 
-print("=== [DEBUG]: DataParallel vs Single GPU ===\n")
+if __name__ == "__main__": 
+    num_gpu = torch.cuda.device_count() 
+    print("DEBUG]: DataParallel vs Single GPU \n")
 
-print("Running Single GPU...")
-t_single = run(dp=False)
+    # Running single GPU Training
+    prof.reset()
+    print("Running Single GPU...")
+    t_single = run(dp=False)
+    print(prof.summary())
 
-num_gpu = torch.cuda.device_count()
 
-print(f"Running on {num_gpu} GPU...")
-t_multi = run(dp=True)
+    # Running multiple GPU Training (Data Parallel only)
+    prof.reset()
+    print(f"Running on {num_gpu} GPU...")
+    t_multi = run(dp=True)
+    print(prof.summary())
 
-print(f"Single GPU : {t_single:.1f}s\n")
-print(f"Multi  GPU : {t_multi:.1f}s\n")
 
-print(f"Speedup    : {t_multi / t_single:.2f}x")
+    # Comparison
+    print(f"Single GPU : {t_single:.1f}s\n")
+    print(f"Multi  GPU : {t_multi:.1f}s\n")
+
+    print(f"Speedup    : {t_multi / t_single:.2f}x")

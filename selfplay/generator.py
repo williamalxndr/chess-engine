@@ -10,7 +10,7 @@ from core.encoder import *
 from selfplay.worker import GameWorker
 from core import factory
 from game.rules import Rules
-
+from profiler import timing as prof
 
 class SelfPlayGenerator:
     def __init__(self, 
@@ -106,6 +106,13 @@ class SelfPlayGenerator:
 
         t3 = time.time()
         # print(f"[DEBUG] nodes: {len(all_eval_nodes)} | collect: {t1-t0:.4f}s | inference: {t2-t1:.4f}s | backprop: {t3-t2:.4f}s")
+
+
+        batch_selection_time = t1 - t0
+        inference_time = t2 - t1
+        node_backprop_time = t3 - t2
+
+        prof.add(batch_selection=batch_selection_time, inference=inference_time, node_backprop=node_backprop_time)
 
         return sims_done    
     
