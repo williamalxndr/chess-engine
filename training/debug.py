@@ -1,0 +1,52 @@
+# this file is just for debugging how much speed up data parallel gets if compared using single GPU
+
+import time
+from core import factory
+from core.config import load_config
+from training.pipeline import Pipeline
+from pathlib import Path
+
+cfg = load_config(["--config", "configs/kaggle-test.yaml"])
+
+import time
+from core import factory
+from core.config import load_config
+from training.pipeline import Pipeline
+
+cfg = load_config(["--config", "configs/kaggle-test.yaml"])
+
+def run(dp: bool) -> float:
+    network = factory.build_network(cfg.game, version=cfg.version, dp=dp)
+
+    pipeline = Pipeline(
+        game=cfg.game,
+        version=cfg.version,
+        network=network,
+        save_file_name=cfg.file_name,
+        iterations=99999,
+        steps_per_iter=cfg.training.steps_per_iter,
+        train_batch_size=cfg.training.train_batch_size,
+        mcts_batch_size=cfg.mcts.mcts_batch_size,
+        num_rollout=cfg.mcts.num_rollout,
+        num_selfplay=cfg.mcts.num_selfplay,
+        replay_buffer_max_size=cfg.training.replay_buffer_max_size,
+        verbose=cfg.logging.verbose,
+        kaggle=cfg.logging.kaggle,
+    )
+
+    start = time.time()
+    pipeline.train(duration_hours=cfg.training.duration, log_interval=cfg.logging.log_interval)
+    return time.time() - start
+
+
+print("=== [DEBUG]: DataParallel vs Single GPU ===\n")
+
+print("Running Single GPU...")
+t_single = run(dp=False)
+print(f"Single GPU : {t_single:.1f}s\n")
+
+print("Running Multiple GPU...")
+t_multi = run(dp=True)
+print(f"Multi  GPU : {t_multi:.1f}s\n")
+
+print(f"Speedup    : {t_single / t_multi:.2f}x")
