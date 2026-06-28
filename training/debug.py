@@ -20,7 +20,7 @@ def run(dp: bool) -> float:
         version=cfg.version,
         network=network,
         save_file_name=cfg.file_name,
-        iterations=cfg.iterations or 99999,
+        iterations=cfg.training.iterations or 99999,
         steps_per_iter=cfg.training.steps_per_iter,
         train_batch_size=cfg.training.train_batch_size,
         mcts_batch_size=cfg.mcts.mcts_batch_size,
