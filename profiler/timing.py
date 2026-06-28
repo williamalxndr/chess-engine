@@ -28,8 +28,8 @@ def summary():
         f"  [SELFPLAY] Batch selection time    (CPU): {batch_selection_time:.2f}s\n"
         f"  [SELFPLAY] Inference time          (GPU): {inference_time:.2f}s\n"
         f"  [SELFPLAY] Node backprop time      (CPU): {node_backprop_time:.2f}s\n"
-        f"  [OPTIMIZER] Network optimize time  (GPU): {network_optimize_time:.2f}s"
-        f"  CPU Time: {cpu_time:.2f}"
-        f"  GPU Time: {gpu_time:.2f}s"
-        f"  Total: {total}"
+        f"  [OPTIMIZER] Network optimize time  (GPU): {network_optimize_time:.2f}s\n"
+        f"  CPU Time: {cpu_time:.2f}s\n"
+        f"  GPU Time: {gpu_time:.2f}s\n"
+        f"  Total: {total}\n"
     )
