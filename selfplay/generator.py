@@ -13,8 +13,9 @@ from game.rules import Rules
 
 
 class SelfPlayGenerator:
-    def __init__(self, game: str, version: str = "latest",
-                 file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+    def __init__(self, 
+                 game: str, version: str = "latest", file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+                 network: PolicyValueNetwork = None,
                  num_rollout: int = 100, batch_size: int = 50, seed: int = 42):
         self.game = game
         self.version = version
@@ -25,7 +26,7 @@ class SelfPlayGenerator:
         self.batch_size = batch_size
         self.rules = Rules.get(game=game)
 
-        self.network = factory.load_network(
+        self.network = network or factory.load_network(
             path=path, game=game, version=version,
             file_name=file_name, parent_dir=parent_dir,
         )

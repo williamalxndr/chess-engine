@@ -25,10 +25,12 @@ class Pipeline:
         |_______ improved network _________|
     """
 
-    def __init__(self, game: str = "chess", version: str = "latest",
+    def __init__(self, 
+                 game: str = "chess", version: str = "latest",
                  load_file_name: str = None, save_file_name: str = None,
                  parent_dir: str = "checkpoints", path: str = None,
                  buffer_file_name: str = None, buffer_path: str = None,
+                 network: PolicyValueNetwork = None,
                  optimizer: optim.Adam = None,
                  train_batch_size: int = 32,
                  replay_buffer_max_size: int = 10000,
@@ -54,7 +56,7 @@ class Pipeline:
         self.kaggle           = kaggle
 
         # Network
-        self.network = factory.load_network(
+        self.network = network or factory.load_network(
             path=path, game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir,
         )

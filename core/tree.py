@@ -400,7 +400,9 @@ class VanillaMCTS(BaseMCTS):
 
 
 class NetworkMCTS(BaseMCTS):
-    def __init__(self, game: str = None, version: str = None, file_name: str = None, parent_dir: str = None, path: str = None, 
+    def __init__(self, 
+                 game: str = None, version: str = None, file_name: str = None, parent_dir: str = None, path: str = None, 
+                 network: PolicyValueNetwork = None,
                  num_rollout=1000, batch_size=50, 
                  c_puct=1.41, epsilon=0.25, seed=42, alpha=0.03,
                  add_noise=False, verbose=True):
@@ -409,7 +411,7 @@ class NetworkMCTS(BaseMCTS):
                          num_rollout=num_rollout, batch_size=batch_size, 
                          verbose=verbose, seed=seed)
         
-        self.network = factory.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
+        self.network = network or factory.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
         # Constants
         self.c_puct = c_puct
