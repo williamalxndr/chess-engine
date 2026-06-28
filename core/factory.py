@@ -1,6 +1,6 @@
 import time
 import torch
-from torch import nn
+from torch.nn.parallel import DistributedDataParallel
 
 from core.encoder import Encoder
 from core.network import NetworkFactory, PolicyValueNetwork
@@ -23,12 +23,12 @@ def build_network(game: str, version: str = "latest", dp=True) -> PolicyValueNet
     """
     Build or retrieve a cached (encoder, network) pair for a game + version.
     """
-    cache_key = f"{game}/{version}"
+    cache_key = f"{game}/{version}/dp={dp}"
 
     if cache_key not in _network_cache:
         network = NetworkFactory.create(game, version)
         if torch.cuda.device_count() > 1 and dp:
-            network = nn.DataParallel(network)
+            network = DistributedDataParallel(network)
         _network_cache[cache_key] = network
 
 
