@@ -2,3 +2,4 @@ numpy
 torch
 rich
 python-chess
+pyyaml
