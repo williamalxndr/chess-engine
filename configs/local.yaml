@@ -4,7 +4,7 @@ file_name: test
 
 mcts:
   num_rollout: 64
-  mcts_batch_size: 8
+  mcts_batch_size: 16
   num_selfplay: 4
 
 training:

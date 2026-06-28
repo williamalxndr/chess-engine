@@ -1,18 +1,18 @@
 game: chess
 version: V2
-file_name: best
+file_name: v2
 
 mcts:
-  num_rollout: 800
-  mcts_batch_size: 64
-  num_selfplay: 4
+  num_rollout: 256
+  mcts_batch_size: 32
+  num_selfplay: 8
 
 training:
   duration: 5
   steps_per_iter: 200
-  train_batch_size: 64
+  train_batch_size: 128
   replay_buffer_max_size: 50000
 
 logging:
   kaggle: true
-  log_interval: 5
+  log_interval: 1

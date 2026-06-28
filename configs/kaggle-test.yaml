@@ -5,7 +5,7 @@ file_name: test
 mcts:
   num_rollout: 128
   mcts_batch_size: 16
-  num_selfplay: 2
+  num_selfplay: 4
 
 training:
   duration: 0.1
