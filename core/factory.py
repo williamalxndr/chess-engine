@@ -1,6 +1,7 @@
 import time
 import torch
 from torch.nn.parallel import DistributedDataParallel, DataParallel
+import traceback
 
 from core.encoder import Encoder
 from core.network import NetworkFactory, PolicyValueNetwork
@@ -27,9 +28,12 @@ def build_network(game: str, version: str = "latest", dp=True) -> PolicyValueNet
 
     if cache_key not in _network_cache:
         network = NetworkFactory.create(game, version)
+
         if torch.cuda.is_available() and torch.cuda.device_count() > 1 and dp:
             network = DataParallel(network)
             print(f"Available: {torch.cuda.device_count()} GPU")
+            traceback.print_stack() 
+
         _network_cache[cache_key] = network
 
 
