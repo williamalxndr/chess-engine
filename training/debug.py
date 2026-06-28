@@ -1,10 +1,11 @@
 # this file is just for debugging how much speed up data parallel gets if compared using single GPU
 
 import time
+import torch
+
 from core import factory
 from core.config import load_config
 from training.pipeline import Pipeline
-from pathlib import Path
 
 cfg = load_config(["--config", "configs/kaggle-test.yaml"])
 
@@ -43,10 +44,13 @@ print("=== [DEBUG]: DataParallel vs Single GPU ===\n")
 
 print("Running Single GPU...")
 t_single = run(dp=False)
-print(f"Single GPU : {t_single:.1f}s\n")
 
-print("Running Multiple GPU...")
+num_gpu = torch.cuda.device_count()
+
+print(f"Running on {num_gpu} GPU...")
 t_multi = run(dp=True)
+
+print(f"Single GPU : {t_single:.1f}s\n")
 print(f"Multi  GPU : {t_multi:.1f}s\n")
 
-print(f"Speedup    : {t_single / t_multi:.2f}x")
+print(f"Speedup    : {t_multi / t_single:.2f}x")
