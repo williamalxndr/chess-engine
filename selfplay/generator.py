@@ -105,7 +105,7 @@ class SelfPlayGenerator:
             sims_done[wid] = len(worker_nodes) + batch_sims_done
 
         t3 = time.time()
-        print(f"[DEBUG] nodes: {len(all_eval_nodes)} | collect: {t1-t0:.4f}s | inference: {t2-t1:.4f}s | backprop: {t3-t2:.4f}s")
+        # print(f"[DEBUG] nodes: {len(all_eval_nodes)} | collect: {t1-t0:.4f}s | inference: {t2-t1:.4f}s | backprop: {t3-t2:.4f}s")
 
         return sims_done    
     
