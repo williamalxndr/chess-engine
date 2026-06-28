@@ -1,6 +1,6 @@
 import time
 import numpy as np
-import torch
+from torch.nn.parallel import DataParallel, DistributedDataParallel
 from torch import optim
 import copy
 import argparse
@@ -223,6 +223,7 @@ class Pipeline:
     def save(self, file_name: str = None):
         file_name  = file_name or self.save_file_name
         parent_dir = "kaggle" if self.kaggle else "checkpoints"
+        self.network = self.network.module if isinstance(self.network, DataParallel) else self.network
         self.network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
 
