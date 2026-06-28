@@ -1,12 +1,17 @@
 import time
+import os
+from functools import partial
 import numpy as np
-from torch.nn.parallel import DataParallel, DistributedDataParallel
+import torch
 from torch import optim
 import copy
 import argparse
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
 from pathlib import Path
 from contextlib import contextmanager
+from torch import distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed.optim import DistributedOptimizer
 
 from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
@@ -29,8 +34,8 @@ class Pipeline:
                  game: str = "chess", version: str = "latest",
                  load_file_name: str = None, save_file_name: str = None,
                  parent_dir: str = "checkpoints", path: str = None,
-                 buffer_file_name: str = None, buffer_path: str = None,
                  network: PolicyValueNetwork = None,
+                 buffer_file_name: str = None, buffer_path: str = None,
                  optimizer: optim.Adam = None,
                  train_batch_size: int = 32,
                  replay_buffer_max_size: int = 10000,
@@ -41,8 +46,8 @@ class Pipeline:
                  steps_per_iter: int = 200,
                  patience: int = 50,
                  verbose: bool = False,
-                 kaggle: bool = False):
-
+                 kaggle: bool = False,
+                 ):
         self.game             = game
         self.version          = version
         self.save_file_name   = save_file_name or load_file_name or "fallback"
@@ -74,18 +79,21 @@ class Pipeline:
             self.replay_buffer = ReplayBuffer(replay_buffer_max_size)
             print("Buffer created")
 
+        # Generator
         self.generator = SelfPlayGenerator(
             game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir, path=path,
             network=network,
             num_rollout=num_rollout, batch_size=mcts_batch_size,
         )
+
+        # Trainer and optimizer
+        self.optimizer = optim.Adam(self.network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer
         self.trainer = Trainer(
             self.network,
-            optim.Adam(self.network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer,
+            self.optimizer,
             T_max=iterations,
-        )
-
+        )        
 
     # ── Core loop ─────────────────────────────────────────────────────────────
 
@@ -223,12 +231,30 @@ class Pipeline:
     def save(self, file_name: str = None):
         file_name  = file_name or self.save_file_name
         parent_dir = "kaggle" if self.kaggle else "checkpoints"
-        self.network = self.network.module if isinstance(self.network, DataParallel) else self.network
-        self.network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
+        network = self.network.module if isinstance(self.network, DDP) else self.network
+        network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
 
 if __name__ == "__main__":
     cfg = load_config()
+
+    # Set up DDP
+    acc = torch.accelerator.current_accelerator()
+    if acc == "CUDA":
+        torch.accelerator.set_device_index(int(os.environ["LOCAL_RANK"]))
+        backend = torch.distributed.get_default_backend_for_device(acc)
+        dist.init_process_group(backend)
+        rank = dist.get_rank()
+
+        # Wrap the network and optimizer to DDP
+        device_id = rank % torch.accelerator.device_count()
+        network = factory.build_network(cfg.game, cfg.version).to(device_id)
+        network = DDP(network, device_ids=device_id)
+        optimizer = optim.Adam(network.parameters(), lr=0.001, fused=True)
+    
+    else:
+        network = factory.build_network(cfg.game, cfg.version)
+        optimizer = optim.Adam(network.parameters(), lr=0.001, fused=True)
 
     kaggle_network_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.network}/{cfg.file_name}.pt") if cfg.kaggle_datasets.network else None
     local_network_path  = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
@@ -259,7 +285,9 @@ if __name__ == "__main__":
         path=network_path,
         buffer_file_name=buffer_file_name,
         buffer_path=buffer_path,
-        iterations=99999,
+        network=network,
+        optimizer=optimizer,
+        iterations=cfg.training.iterations,
         steps_per_iter=cfg.training.steps_per_iter,
         train_batch_size=cfg.training.train_batch_size,
         mcts_batch_size=cfg.mcts.mcts_batch_size,
