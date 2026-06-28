@@ -27,17 +27,6 @@ def build_network(game: str, version: str = "latest", dp=True) -> PolicyValueNet
     cache_key = f"{game}/{version}/dp={dp}"
 
     if cache_key not in _network_cache:
-        network = NetworkFactory.create(game, version)
-
-        if torch.cuda.is_available() and torch.cuda.device_count() > 1 and dp:
-            network = DataParallel(network)
-            print(f"Available: {torch.cuda.device_count()} GPU")
-            traceback.print_stack() 
-
-        _network_cache[cache_key] = network
-
-
-    if cache_key not in _network_cache:
         _network_cache[cache_key] = NetworkFactory.create(game, version)
     
     return _network_cache[cache_key]
