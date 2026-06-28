@@ -47,6 +47,7 @@ class SelfPlayGenerator:
             self.workers[self._next_id] = GameWorker(
                 game=self.game, version=self.version,
                 file_name=self.file_name, parent_dir=self.parent_dir, path=self.path,
+                network=self.network,
                 seed=seed,
                 num_rollout=self.num_rollout,
                 batch_size=self.batch_size,
