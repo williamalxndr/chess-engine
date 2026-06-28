@@ -17,6 +17,7 @@ class MCTSConfig:
 @dataclass
 class TrainingConfig:
     duration: Optional[float] = None
+    iterations: Optional[int] = None
     steps_per_iter: int = 64
     train_batch_size: int = 16
     replay_buffer_max_size: int = 10000
@@ -50,7 +51,7 @@ class Config:
         lines = [
             f"  game={self.game}  version={self.version}  file={self.file_name}",
             f"  mcts    : rollouts={self.mcts.num_rollout}  batch={self.mcts.mcts_batch_size}  selfplay={self.mcts.num_selfplay}",
-            f"  training: duration={self.training.duration}h  steps={self.training.steps_per_iter}  batch={self.training.train_batch_size}  buffer={self.training.replay_buffer_max_size}",
+            f"  training: duration={self.training.duration}h  iters={self.training.iterations}  steps={self.training.steps_per_iter}  batch={self.training.train_batch_size}  buffer={self.training.replay_buffer_max_size}",
             f"  logging : kaggle={self.logging.kaggle}  verbose={self.logging.verbose}  log_interval={self.logging.log_interval}",
         ]
         if self.kaggle_datasets.network:
@@ -83,6 +84,7 @@ def _apply_cli_overrides(cfg: Config, overrides: argparse.Namespace) -> Config:
         "mcts_batch_size":          ("mcts",     "mcts_batch_size"),
         "num_selfplay":             ("mcts",     "num_selfplay"),
         "duration":                 ("training", "duration"),
+        "iterations":               ("training", "iterations"),
         "steps_per_iter":           ("training", "steps_per_iter"),
         "train_batch_size":         ("training", "train_batch_size"),
         "replay_buffer_max_size":   ("training", "replay_buffer_max_size"),
@@ -119,6 +121,7 @@ def load_config(argv: list[str] = None) -> Config:
     parser.add_argument("--version",                type=str,   default=None)
     parser.add_argument("--file_name",              type=str,   default=None)
     parser.add_argument("--duration",               type=float, default=None)
+    parser.add_argument("--iterations",             type=int,   default=None)
     parser.add_argument("--num_rollout",            type=int,   default=None)
     parser.add_argument("--mcts_batch_size",        type=int,   default=None)
     parser.add_argument("--num_selfplay",           type=int,   default=None)
