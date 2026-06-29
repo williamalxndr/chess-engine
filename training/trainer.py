@@ -11,7 +11,7 @@ class Trainer:
     def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam, T_max=100):
         self.network = network
         self.optimizer = optimizer
-        self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max)
+        self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max or 100)
         
     def policy_loss(self, policy_logits, policy_true, epsilon=1e-15):
         log_probs = torch.nn.functional.log_softmax(policy_logits, dim=1)

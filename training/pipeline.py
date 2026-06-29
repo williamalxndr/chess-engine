@@ -92,7 +92,7 @@ class Pipeline:
         self.trainer = Trainer(
             self.network,
             self.optimizer,
-            T_max=iterations,
+            T_max=100,
         )        
 
     # ── Core loop ─────────────────────────────────────────────────────────────
@@ -251,11 +251,11 @@ if __name__ == "__main__":
         device_id = rank % torch.accelerator.device_count()
         network = factory.build_ddp([device_id])
         
-        optimizer = optim.Adam(network.parameters(), lr=0.001, fused=True)
+        optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
     
     else:
         network = factory.build_network(cfg.game, cfg.version)
-        optimizer = optim.Adam(network.parameters(), lr=0.001, fused=True)
+        optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
 
     kaggle_network_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.network}/{cfg.file_name}.pt") if cfg.kaggle_datasets.network else None
     local_network_path  = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
