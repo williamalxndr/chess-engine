@@ -91,7 +91,7 @@ class SelfPlayGenerator:
         # ── Forward G×B ───────────────────────────────────────────────────────────
         with torch.no_grad():
             encoded_states = self.encoder.encode_batch([node.state for node in all_eval_nodes])
-            rank = dist.get_rank() if dist.is_initialized() else 0
+            rank = dist.get_rank() if dist.is_initialized() else "not a multiprocess"
             print(f"[rank {rank}] batch shape: {encoded_states.shape}")
             policy_head, value_head = self.network.forward(encoded_states)
 
