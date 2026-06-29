@@ -306,5 +306,7 @@ if __name__ == "__main__":
         duration_hours=cfg.training.duration,
         log_interval=cfg.logging.log_interval,
     )
+
+    dist.destroy_process_group()
     
     print(prof.summary())
