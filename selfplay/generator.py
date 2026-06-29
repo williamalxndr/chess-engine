@@ -193,13 +193,13 @@ class SelfPlayGenerator:
                     results[wid] = result
                     active_workers.discard(wid)
 
-        for wid, worker in self.workers.items():
-            board = worker.mcts.root.state
-            result = self.rules.get_result(board)
-            result_str = "1-0" if result == -1 else "0-1" if result == 1 else "1/2-1/2"
-            fen = board.fen().replace(" ", "_")
-            moves = len(trajectories[wid])
-            print(f"[DEBUG] Worker {wid:02d} | Moves: {moves} | Result: {result_str} | https://lichess.org/editor/{fen}")
+        # for wid, worker in self.workers.items():
+        #     board = worker.mcts.root.state
+        #     result = self.rules.get_result(board)
+        #     result_str = "1-0" if result == -1 else "0-1" if result == 1 else "1/2-1/2"
+        #     fen = board.fen().replace(" ", "_")
+        #     moves = len(trajectories[wid])
+        #     print(f"[DEBUG] Worker {wid:02d} | Moves: {moves} | Result: {result_str} | https://lichess.org/editor/{fen}")
 
 
         return [(trajectories[wid], results[wid]) for wid in trajectories]
