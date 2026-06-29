@@ -81,11 +81,13 @@ class Pipeline:
             print("Buffer created")
 
         # Generator
+        rank = dist.get_rank() if dist.is_initialized() else 0
         self.generator = SelfPlayGenerator(
             game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir, path=path,
             network=network,
             num_rollout=num_rollout, batch_size=mcts_batch_size,
+            seed=rank
         )
 
         # Trainer and optimizer
@@ -168,14 +170,14 @@ class Pipeline:
                 iteration += 1
 
         end = time.time()
-        elapsed = time.time() - start_time
+        elapsed = end - start_time
         h = int(elapsed // 3600)
         m = int((elapsed % 3600) // 60)
         s = int(elapsed % 60)
 
-        self.save()
-
         parent_dir = "kaggle" if self.kaggle else "checkpoints"
+        self.save(parent_dir)
+
         print(f"\nTraining finished after {h}h {m}m {s}s! To play against the trained network, run:")
         print(f"  python3 -m arena.play --game {self.game} --version {self.version} --file_name {self.save_file_name}")
         print(f"  OR")
@@ -229,9 +231,8 @@ class Pipeline:
     def get_network(self):
         return copy.deepcopy(self.network)
 
-    def save(self, file_name: str = None):
-        file_name  = file_name or self.save_file_name
-        parent_dir = "kaggle" if self.kaggle else "checkpoints"
+    def save(self, parent_dir: str):
+        file_name  = self.save_file_name
         network = self.network.module if isinstance(self.network, DDP) else self.network
         network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
