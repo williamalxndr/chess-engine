@@ -242,10 +242,7 @@ if __name__ == "__main__":
 
     # Set up DDP
     acc = torch.accelerator.current_accelerator()
-    print(f"acc = {acc!r}, type = {type(acc)}")
-    print(f"acc == 'CUDA' → {acc == 'CUDA'}")
-
-    if acc == "CUDA":
+    if torch.cuda.is_available():
         local_rank = int(os.environ["LOCAL_RANK"])
         torch.accelerator.set_device_index(local_rank)
         backend = torch.distributed.get_default_backend_for_device(acc)
@@ -254,7 +251,7 @@ if __name__ == "__main__":
 
         # Wrap the network and optimizer to DDP
         device_id = rank % torch.accelerator.device_count()
-        network = factory.build_ddp([device_id])
+        network = factory.build_ddp(device_id, game=cfg.game, version=cfg.version)
         
         optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
     

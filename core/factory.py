@@ -32,7 +32,7 @@ def build_network(game: str, version: str = "latest") -> PolicyValueNetwork:
     return _network_cache[cache_key]
 
 def build_ddp(
-    device_id: list[int],
+    device_id:  int,
     path:       str  = None,
     game:       str  = None,
     version:    str  = None,
@@ -42,7 +42,7 @@ def build_ddp(
     network = load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir).to(device_id)
 
     cache_key = f"{game}/{version}/{device_id}"
-    _network_cache[cache_key] = DDP(network, device_id=device_id)
+    _network_cache[cache_key] = DDP(network, device_ids=[device_id])
 
     return _network_cache[cache_key]
 
