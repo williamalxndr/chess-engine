@@ -53,7 +53,7 @@ class Pipeline:
         self.save_file_name   = save_file_name or load_file_name or "fallback"
         self.parent_dir       = parent_dir
         self.train_batch_size = train_batch_size
-        self.iterations       = iterations
+        self.iterations       = iterations if iterations is not None else 9999
         self.steps_per_iter   = steps_per_iter
         self.num_selfplay     = num_selfplay
         self.patience         = patience
@@ -241,7 +241,8 @@ if __name__ == "__main__":
     # Set up DDP
     acc = torch.accelerator.current_accelerator()
     if acc == "CUDA":
-        torch.accelerator.set_device_index(int(os.environ["LOCAL_RANK"]))
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.accelerator.set_device_index(local_rank)
         backend = torch.distributed.get_default_backend_for_device(acc)
         dist.init_process_group(backend)
         rank = dist.get_rank()

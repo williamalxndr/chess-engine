@@ -12,10 +12,12 @@ from core import factory
 from game.rules import Rules
 from profiler import timing as prof
 from torch.nn.parallel import DataParallel, DistributedDataParallel
+from core.factory import get_encoder
 
 class SelfPlayGenerator:
     def __init__(self, 
-                 game: str, version: str = "latest", file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
+                 game: str, version: str = "latest", 
+                 file_name: str = None, parent_dir: str = "checkpoints", path: str = None,
                  network: PolicyValueNetwork = None,
                  num_rollout: int = 100, batch_size: int = 50, seed: int = 42):
         self.game = game
@@ -26,6 +28,7 @@ class SelfPlayGenerator:
         self.num_rollout = num_rollout
         self.batch_size = batch_size
         self.rules = Rules.get(game=game)
+        self.encoder = get_encoder(game, version)
 
         self.network = network or factory.load_network(
             path=path, game=game, version=version,
@@ -86,10 +89,8 @@ class SelfPlayGenerator:
 
         # ── Forward G×B ───────────────────────────────────────────────────────────
         with torch.no_grad():
-            if isinstance(self.network, DataParallel) or isinstance(self.network, DistributedDataParallel):
-                policy_head, value_head = self.network.module.forward_nodes(all_eval_nodes)
-            else:
-                policy_head, value_head = self.network.forward_nodes(all_eval_nodes)
+            encoded_states = self.encoder.encode_batch([node.state for node in all_eval_nodes])
+            policy_head, value_head = self.network.forward(encoded_states)
 
         policies = policy_head.cpu().numpy()
         values = value_head.cpu().numpy()

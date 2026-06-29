@@ -63,6 +63,10 @@ class Encoder(ABC):
     @abstractmethod
     def decode(self, state): ...
 
+    def encode_batch(self, states: list[torch.Tensor]):
+        batch = [self.encode(state) for state in states]
+        return torch.stack(batch)
+
 class TicTacToeEncoder(Encoder):
     pass
 
@@ -271,7 +275,7 @@ class ChessEncoderV1(ChessEncoder):
         state[20, :, :] = float(board.is_repetition(2))
         return torch.from_numpy(state)
 
-    def decode(self, state) -> chess.Board:
+    def decode(self, state: torch.Tensor) -> chess.Board:
         state = self._to_numpy(state)
         board = self._decode_base(state)
         board.halfmove_clock = int(round(state[19, 0, 0] * 100))

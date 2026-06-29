@@ -54,7 +54,7 @@ class ReplayBuffer:
             parent_dir: str = "checkpoints", path: str = None) -> "ReplayBuffer":
         path = path or f"{parent_dir}/{game}/{version}/{file_name}_buffer.pt"
         data = torch.load(path, weights_only=False)
-        buf = ReplayBuffer(max_size=data['max_size'], seed=data['seed'])
+        buf = ReplayBuffer(max_size=data['max_size'])
         buf.ring_buffer = data['ring_buffer']
         buf.count = data['count']
         return buf
