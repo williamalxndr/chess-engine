@@ -6,13 +6,6 @@ from abc import ABC, abstractmethod
 
 from core.utils import resolve_latest
 
-
-device = torch.device(torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu")
-
-from abc import ABC, abstractmethod
-import torch
-
-
 class Encoder(ABC):
     _registry: dict[str, type["Encoder"]] = {}   # class registry
     _instances: dict[str, "Encoder"] = {}        # singleton cache

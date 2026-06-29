@@ -32,7 +32,6 @@ class Trainer:
 
         device = next(self.network.parameters()).device
 
-        s  = s.to(device)
         pi = pi.to(device)
         z  = z.to(device)
 
