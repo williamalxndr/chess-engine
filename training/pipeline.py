@@ -242,6 +242,9 @@ if __name__ == "__main__":
 
     # Set up DDP
     acc = torch.accelerator.current_accelerator()
+    print(f"acc = {acc!r}, type = {type(acc)}")
+    print(f"acc == 'CUDA' → {acc == 'CUDA'}")
+
     if acc == "CUDA":
         local_rank = int(os.environ["LOCAL_RANK"])
         torch.accelerator.set_device_index(local_rank)
