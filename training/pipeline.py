@@ -248,8 +248,8 @@ if __name__ == "__main__":
 
         # Wrap the network and optimizer to DDP
         device_id = rank % torch.accelerator.device_count()
-        network = factory.build_network(cfg.game, cfg.version).to(device_id)
-        network = DDP(network, device_ids=device_id)
+        network = factory.build_ddp([device_id])
+        
         optimizer = optim.Adam(network.parameters(), lr=0.001, fused=True)
     
     else:

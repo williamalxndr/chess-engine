@@ -1,6 +1,6 @@
 import time
 import torch
-from torch.nn.parallel import DistributedDataParallel, DataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP, DataParallel
 import traceback
 
 from core.encoder import Encoder
@@ -20,15 +20,30 @@ _network_cache: dict[str, PolicyValueNetwork] = {}
 def get_encoder(game: str, version: str = "latest") -> Encoder:
     return Encoder.get(game=game, version=version)
 
-def build_network(game: str, version: str = "latest", dp=True) -> PolicyValueNetwork:
+def build_network(game: str, version: str = "latest") -> PolicyValueNetwork:
     """
     Build or retrieve a cached (encoder, network) pair for a game + version.
     """
-    cache_key = f"{game}/{version}/dp={dp}"
+    cache_key = f"{game}/{version}"
 
     if cache_key not in _network_cache:
         _network_cache[cache_key] = NetworkFactory.create(game, version)
     
+    return _network_cache[cache_key]
+
+def build_ddp(
+    device_id: list[int],
+    path:       str  = None,
+    game:       str  = None,
+    version:    str  = None,
+    file_name:  str  = None,
+    parent_dir: str  = None,
+):
+    network = load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir).to(device_ids)
+
+    cache_key = f"{game}/{version}/{device_id}"
+    _network_cache[cache_key] = DDP(network, device_id=device_id)
+
     return _network_cache[cache_key]
 
 def load_network(
@@ -37,7 +52,6 @@ def load_network(
     version:    str  = None,
     file_name:  str  = None,
     parent_dir: str  = None,
-    dp:         bool = True
 ) -> PolicyValueNetwork:
     """
     Load or retrieve a cached network
@@ -50,7 +64,7 @@ def load_network(
     if path is None and file_name is None:
         if game is None:
             raise ValueError("'game' is required.")
-        return build_network(game=game, version=version or "latest", dp=dp)
+        return build_network(game=game, version=version or "latest")
 
     # Not both
     if path is not None and any(v is not None for v in [game, version, file_name]):
