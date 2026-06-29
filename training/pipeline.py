@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from torch import distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import DistributedOptimizer
+from profiler import timing as prof 
 
 from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
@@ -236,6 +237,7 @@ class Pipeline:
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
 
 if __name__ == "__main__":
+    prof.reset()
     cfg = load_config()
 
     # Set up DDP
@@ -303,3 +305,5 @@ if __name__ == "__main__":
         duration_hours=cfg.training.duration,
         log_interval=cfg.logging.log_interval,
     )
+    
+    print(prof.summary())
