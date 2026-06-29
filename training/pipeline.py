@@ -162,7 +162,7 @@ class Pipeline:
 
                 # Save every 10 minutes
                 if current_time - last_save_time >= save_interval:
-                    self.save()
+                    self.save(parent_dir="kaggle" if self.kaggle else "checkpoints")
                     last_save_time = current_time
 
                 self._update_progress(progress, task, current_time, start_time, duration_seconds, loss, policy_loss, v_loss, not_improving)
