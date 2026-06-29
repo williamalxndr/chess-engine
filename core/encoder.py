@@ -57,8 +57,11 @@ class Encoder(ABC):
     def decode(self, state): ...
 
     def encode_batch(self, states: list[torch.Tensor]):
-        batch = [self.encode(state) for state in states]
-        return torch.stack(batch)
+        B = len(states)
+        out = np.zeros((B, self.channels, 8, 8), dtype=np.float32)
+        for i, state in enumerate(states):
+            out[i] = self.encode(state).numpy()
+        return torch.from_numpy(out)
 
 class TicTacToeEncoder(Encoder):
     pass
@@ -320,7 +323,7 @@ class ChessEncoderV2(ChessEncoder):
         state[18, :, :] = float(board.is_check())
         state[19, :, :] = float(board.is_repetition(1) and not board.is_repetition(2))
         me, opp = board.turn, not board.turn
-        state[20, :, :] = len(list(board.legal_moves)) / self.MAX_LEGAL
+        state[20, :, :] = board.legal_moves.count() / self.MAX_LEGAL
         state[21, :, :] = self._attacked_material_value(board, opp, me) / self.MAX_MATERIAL
         state[22, :, :] = self._attacked_material_value(board, me, opp) / self.MAX_MATERIAL
         state[23, :, :] = self._pieces_around_king(board, me, me) / 8.0

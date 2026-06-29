@@ -157,7 +157,7 @@ class BaseMCTS(ABC):
         return expanded_node
 
     @abstractmethod
-    def evaluate(self, nods: list[Node]):
+    def evaluate(self, nodes: list[Node]):
         """
         Evaluate how good nodes are
         """
@@ -466,8 +466,12 @@ class NetworkMCTS(BaseMCTS):
         """
         Returns a tensor of (B x C x H x W) to be forwarded/evaluated by the network
         """
-        encoded_eval_states = [self.encoder.encode(node.state) for node in eval_nodes]      # Encode ensures that eval_nodes state to be shaped (C x H x W)
-        return torch.stack(encoded_eval_states)
+        results = []
+        for node in eval_nodes:
+            if node.encoded_state is None:
+                node.encoded_state = self.encoder.encode(node.state)
+            results.append(node.encoded_state)
+        return torch.stack(results)
 
 
     def forward_nodes(self, eval_nodes: list[Node]):
@@ -499,6 +503,23 @@ class NetworkMCTS(BaseMCTS):
         
         node.priors = {a: float(policy[a]) for a in legal_actions}
 
+    def set_priors_batch(self, nodes: list[Node], policies: np.ndarray):
+        for i, node in enumerate(nodes):
+            legal_actions = node.get_legal_actions()
+            policy = policies[i].copy()
+            
+            # Mask illegal
+            mask = np.ones(len(policy), dtype=bool)
+            mask[legal_actions] = False
+            policy[mask] = -1e9
+            
+            # Softmax
+            policy -= policy.max()
+            np.exp(policy, out=policy)
+            policy /= policy.sum()
+            
+            node.priors = {a: float(policy[a]) for a in legal_actions}
+
     @torch.no_grad()
     def evaluate(self, eval_nodes: list[Node]) -> np.ndarray:
         """
@@ -513,13 +534,14 @@ class NetworkMCTS(BaseMCTS):
         
         policy_head, value_head = self.forward_nodes(eval_nodes)
 
-        policies = policy_head.cpu().numpy()  # (B, action_space_size)
-        values = value_head.cpu().numpy()     # (B, 1)
+        output = torch.cat([policy_head, value_head], dim=1).cpu().numpy()
+        
+        policies = output[:, :-1]
+        values = output[:, -1]
 
-        for i, node in enumerate(eval_nodes):
-            self.set_priors(node, policies[i])
+        self.set_priors_batch(eval_nodes, policies)
 
-        return values[:, 0]  # (B,)
+        return values # (B,)
     
     def _apply_root_noise(self):
         """

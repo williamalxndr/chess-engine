@@ -31,7 +31,8 @@ class Node:
         self.is_leaf = rules.is_terminal(state)
         self.result = rules.get_result(state)
         self._legal_actions = rules.get_legal_actions(state) 
-        self.untried_actions = list(self._legal_actions)  
+        self.untried_actions = list(self._legal_actions) 
+        self.encoded_state = None
 
     def add_child(self, child: "Node", action):
         """

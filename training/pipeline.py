@@ -307,6 +307,7 @@ if __name__ == "__main__":
         log_interval=cfg.logging.log_interval,
     )
 
-    dist.destroy_process_group()
+    if dist.is_available() and dist.is_initialized(): 
+        dist.destroy_process_group()
     
     print(prof.summary())
