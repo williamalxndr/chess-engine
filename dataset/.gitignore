@@ -1,0 +1,4 @@
+.env.lichess
+**/*.pgn
+states.pt
+target.csv
