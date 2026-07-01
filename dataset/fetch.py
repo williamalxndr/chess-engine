@@ -64,11 +64,10 @@ def fetch_pgn(file_path, display=True, skip_moves=10):
 
                 encoded = encoder.encode(board)
                 policy = move_to_int(move)
-                turn_multiplier = -1 if board.turn == chess.WHITE else 1
 
                 rows.append({
                     "encoded_state": encoded,
-                    "value": value * turn_multiplier,
+                    "value": value,
                     "policy": policy,
                 })
 
