@@ -66,7 +66,7 @@ class PolicyValueNetwork(nn.Module, ABC):
         batch  = torch.stack([encode(n.state) for n in nodes])
         return self.forward(batch)
 
-    def save(self, game: str, version: str, file_name: str, parent_dir: str = "checkpoints", path: str=None):
+    def save(self, game: str = "chess", version: str = "v2", file_name: str = "example", parent_dir: str = "checkpoints", path: str=None):
         """Save weights + metadata for load()."""
         dir_path = Path(f"{parent_dir}/{game}/{version}")
         dir_path.mkdir(parents=True, exist_ok=True)

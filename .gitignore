@@ -7,3 +7,4 @@ profile.prof
 command.txt
 output.prof
 *.pt
+**/.DS_Store
