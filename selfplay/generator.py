@@ -154,9 +154,12 @@ class SelfPlayGenerator:
             action = worker.sample_action(policy)
 
             encoded = worker.mcts.encoder.encode(state)
+            legal_mask = worker.mcts.encoder.legal_action_mask(state)
             game_over, result = worker.advance(action)
-            step_results[wid] = (encoded, torch.tensor(policy), game_over, result)
+
+            step_results[wid] = (encoded, torch.tensor(policy), game_over, result, legal_mask)
         
+        print(".", end="", flush=True)
 
         return step_results
 
@@ -187,8 +190,8 @@ class SelfPlayGenerator:
         while active_workers:
             step_results = self.search_step(active_workers)
 
-            for wid, (state, policy, game_over, result) in step_results.items():
-                trajectories[wid].append((state, policy))
+            for wid, (state, policy, game_over, result, legal_mask) in step_results.items():
+                trajectories[wid].append((state, policy, legal_mask))
                 if game_over:
                     results[wid] = result
                     active_workers.discard(wid)

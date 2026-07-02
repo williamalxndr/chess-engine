@@ -13,19 +13,20 @@ class ReplayBuffer:
     def add(self, trajectory, z):
         z = torch.tensor(z, dtype=torch.float32).unsqueeze(-1)
 
-        for s, pi in trajectory:
+        for s, pi, mask in trajectory:
             pointer = self.count % self.max_size
 
             s = s.clone().detach().float()
             pi = pi.clone().detach().float()
+            mask = mask.clone().detach().bool()
 
-            self.ring_buffer[pointer] = (s, pi, z)
+            self.ring_buffer[pointer] = (s, pi, mask, z)
 
             self.count += 1
 
     def sample(self, batch_size):
         """
-        Returns a tuple s, pi, z
+        Returns a tuple s, pi, mask, z
         with each of them sized batch_size
         """
         if batch_size > len(self):
@@ -33,9 +34,9 @@ class ReplayBuffer:
 
         indices = self.rng.choice(len(self), size=batch_size, replace=False)
         data = [self.ring_buffer[i] for i in indices]  # list of (s, pi, z)
-        s_list, pi_list, z_list = zip(*data)
-        s, pi, z = torch.stack(s_list), torch.stack(pi_list), torch.stack(z_list)
-        return s, pi, z
+        s_list, pi_list, mask_list, z_list = zip(*data)
+        s, pi, mask, z = torch.stack(s_list), torch.stack(pi_list), torch.stack(mask_list), torch.stack(z_list)
+        return s, pi, mask, z
     
     def save(self, game: str, version: str, file_name: str, parent_dir: str = "checkpoints", path: str = None):
         dir_path = Path(f"{parent_dir}/{game}/{version}")
