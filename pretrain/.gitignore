@@ -2,3 +2,4 @@
 **/*.pgn
 states.pt
 target.csv
+legal_masks.pt

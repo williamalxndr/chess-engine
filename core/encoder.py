@@ -66,7 +66,18 @@ class Encoder(ABC):
 class TicTacToeEncoder(Encoder):
     pass
 
-class ChessEncoder(Encoder):
+class ChessEncoder(Encoder, ABC):
+
+    # ── legal action masking ────────────────────────────────────────────────
+
+    ACTION_SPACE_SIZE = 4672
+
+    def legal_action_mask(self, board: chess.Board) -> torch.BoolTensor:
+        mask = torch.zeros(self.ACTION_SPACE_SIZE, dtype=torch.bool)
+        for move in board.legal_moves:
+            mask[move_to_int(move)] = True
+        return mask
+
 
     # ── encode helpers ──────────────────────────────────────────────────────
 

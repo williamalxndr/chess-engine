@@ -65,10 +65,13 @@ def fetch_pgn(file_path, display=True, skip_moves=10):
                 encoded = encoder.encode(board)
                 policy = move_to_int(move)
 
+                legal_mask = encoder.legal_action_mask(board)
+
                 rows.append({
                     "encoded_state": encoded,
                     "value": value,
                     "policy": policy,
+                    "legal_mask": legal_mask
                 })
 
                 board.push(move)
@@ -151,7 +154,7 @@ def print_statistics(all_game_stats):
     print("=" * 50)
 
 
-def fetch_all(folder_path="dataset/games", display=True, skip_moves=10):
+def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10):
     all_rows = []
     all_game_stats = []
     pgn_files = sorted(glob.glob(f"{folder_path}/*.pgn"))
@@ -173,5 +176,9 @@ def fetch_all(folder_path="dataset/games", display=True, skip_moves=10):
 df = fetch_all(display=False, skip_moves=10)
 
 states = torch.stack(df["encoded_state"].tolist())  # (N, 30, 8, 8)
-torch.save(states, "dataset/states.pt")
-df[["value", "policy"]].to_csv("dataset/labels.csv", index=False)
+legal_masks = torch.stack(df["legal_mask"].tolist())
+
+# Save
+torch.save(states, "pretrain/states.pt")
+torch.save(legal_masks, "pretrain/legal_mask.pt")
+df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)

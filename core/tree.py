@@ -492,12 +492,11 @@ class NetworkMCTS(BaseMCTS):
         return self.forward_tensor(batch)
     
     def set_priors(self, node: Node, policy: np.ndarray):
-        legal_actions = node.get_legal_actions()
-        mask = np.ones(policy.shape, dtype=bool)
-        mask[legal_actions] = False
-        policy[mask] = -1e9 
+        mask = self.encoder.legal_action_mask(node.state)
+        legal_actions = np.where(mask)[0]
+        policy[~mask] = -float("inf")
         
-        policy = policy - np.max(policy)  
+        policy = policy - np.max(policy)
         policy = np.exp(policy)
         policy = policy / np.sum(policy)
         
@@ -505,13 +504,12 @@ class NetworkMCTS(BaseMCTS):
 
     def set_priors_batch(self, nodes: list[Node], policies: np.ndarray):
         for i, node in enumerate(nodes):
-            legal_actions = node.get_legal_actions()
             policy = policies[i].copy()
             
             # Mask illegal
-            mask = np.ones(len(policy), dtype=bool)
-            mask[legal_actions] = False
-            policy[mask] = -1e9
+            mask = self.encoder.legal_action_mask(node.state)
+            legal_actions = np.where(mask)[0]
+            policy[~mask] = -float("inf")
             
             # Softmax
             policy -= policy.max()
