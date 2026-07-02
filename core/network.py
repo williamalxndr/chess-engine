@@ -8,9 +8,33 @@ import re
 
 from core.node import Node
 from core.utils import resolve_latest
-from game.rules import Rules, ChessRules, TicTacToeRules
+from game.rules import Rules
 from core.encoder import Encoder
 
+class ValueHead(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+class PolicyHead(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, 73, kernel_size=1)  
+
+    def forward(self, x):                   # (N, in_channels, 8, 8)
+        x = self.conv(x)                    # (N, 73, 8, 8)
+        x = x.flip(dims=[2])                # (N, 73, 8, 8), flips the board vertically (rank mirror)
+        x = x.permute(0, 2, 3, 1)           # (N, 8, 8, 73)  -> (N, rank, file, plane)
+        return x.reshape(x.size(0), -1)     # (N, 4672), index = rank*8*73 + file*73 + plane_idx == from_sq*73 + plane_idx
+    
 
 class PolicyValueNetwork(nn.Module, ABC):
     _registry = {}
@@ -31,19 +55,10 @@ class PolicyValueNetwork(nn.Module, ABC):
             torch.accelerator.current_accelerator()
             if torch.accelerator.is_available() else "cpu"
         )
-        self.policy_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(self.body_channels, self.action_space_size)
-        )
-        self.value_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(self.body_channels, 1),
-            nn.Tanh()
-        )
-        self.to(self.device)
 
+        self.policy_head = PolicyHead(self.body_channels).to(self.device)
+        self.value_head = ValueHead(self.body_channels).to(self.device)
+        self.to(self.device)
 
     @abstractmethod
     def _build_body(self) -> nn.Sequential:
