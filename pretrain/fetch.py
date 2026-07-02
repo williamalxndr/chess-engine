@@ -180,5 +180,5 @@ legal_masks = torch.stack(df["legal_mask"].tolist())
 
 # Save
 torch.save(states, "pretrain/states.pt")
-torch.save(legal_masks, "pretrain/legal_mask.pt")
+torch.save(legal_masks, "pretrain/legal_masks.pt")
 df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)
