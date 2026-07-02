@@ -68,10 +68,8 @@ class PolicyValueNetwork(nn.Module, ABC):
 
     def save(self, game: str = "chess", version: str = "v2", file_name: str = "example", parent_dir: str = "checkpoints", path: str=None):
         """Save weights + metadata for load()."""
-        dir_path = Path(f"{parent_dir}/{game}/{version}")
-        dir_path.mkdir(parents=True, exist_ok=True)
-
-        file_path = path or dir_path / f"{file_name}.pt"
+        file_path = Path(path) if path else Path(f"{parent_dir}/{game}/{version}") / f"{file_name}.pt"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         torch.save({
             "state_dict":  self.state_dict(),
@@ -80,6 +78,8 @@ class PolicyValueNetwork(nn.Module, ABC):
             "game":        game,
             "version":     version,
         }, file_path)
+
+        print(f"Network saved at {file_path}")
 
     @staticmethod
     def load(game: str = None, version: str = None, file_name: str=None, parent_dir: str = "checkpoints", path: str = None) -> "PolicyValueNetwork":
