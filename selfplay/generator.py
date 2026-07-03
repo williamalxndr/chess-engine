@@ -92,6 +92,9 @@ class SelfPlayGenerator:
         with torch.no_grad():
             encoded_states = self.encoder.encode_batch([node.state for node in all_eval_nodes])
             rank = dist.get_rank() if dist.is_initialized() else "not a multiprocess"
+
+            device = next(self.network.parameters()).device
+            encoded_states = encoded_states.to(device)
             policy_head, value_head = self.network.forward(encoded_states)
 
         policies = policy_head.cpu().numpy()

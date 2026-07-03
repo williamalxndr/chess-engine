@@ -3,3 +3,4 @@ torch
 rich
 python-chess
 pyyaml
+accelerate

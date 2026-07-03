@@ -110,14 +110,6 @@ class BaseMCTS(ABC):
         pass
 
     def select(self):
-        """
-        Returns:
-            (node, action):
-            - action=None: node sudah punya priors, descend ke child terbaik
-            tapi child belum di-materialize → expand child itu
-            - action='evaluate': node belum punya priors → evaluate node ini dulu
-            - action=<int>: node punya priors, child ini perlu di-materialize
-        """
         node = self.root
         while self._has_been_expanded(node) and not node.get_leaf():
             action = self.best_action(node)
@@ -460,6 +452,8 @@ class NetworkMCTS(BaseMCTS):
         if eval_encoded_states.ndim != 4:
             raise ValueError("eval_encoded_states shape must be (B x C x H x W)")
         
+        device = next(self.network.parameters()).device
+        eval_encoded_states = eval_encoded_states.to(device)
         return self.network(eval_encoded_states)
     
     def encode_nodes(self, eval_nodes: list[Node]):

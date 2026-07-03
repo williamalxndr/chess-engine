@@ -72,7 +72,6 @@ class PolicyValueNetwork(nn.Module, ABC):
     def forward(self, x: torch.Tensor):
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).float()
-        x = x.to(self.device)
         features = self.body(x)
         return self.policy_head(features), self.value_head(features)
 
