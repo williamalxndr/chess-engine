@@ -403,7 +403,7 @@ class NetworkMCTS(BaseMCTS):
                          num_rollout=num_rollout, batch_size=batch_size, 
                          verbose=verbose, seed=seed)
         
-        self.network = network or factory.load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
+        self.network = network or factory.load_or_build_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
         # Constants
         self.c_puct = c_puct

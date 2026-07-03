@@ -43,7 +43,7 @@ def build_ddp(
     file_name:  str  = None,
     parent_dir: str  = None,
 ):
-    network = load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir).to(device_id)
+    network = load_or_build_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir).to(device_id)
 
     cache_key = f"{game}/{version}/{device_id}"
     _network_cache[cache_key] = DDP(network, device_ids=[device_id])
@@ -57,27 +57,17 @@ def load_network(
     file_name:  str  = None,
     parent_dir: str  = None,
 ) -> PolicyValueNetwork:
-    """
-    Load or retrieve a cached network
-
-    Usage:
-        load(path="checkpoints/chess/V2/example.pt")
-        load(game="chess", version="V2", file_name="example")
-    """
-    # If not load from .pt, build fresh
     if path is None and file_name is None:
-        if game is None:
-            raise ValueError("'game' is required.")
-        return build_network(game=game, version=version or "latest")
+        raise ValueError("Must provide 'path', or 'file_name' (with 'game'/'version'), to load a checkpoint.")
 
-    # Not both
+    # Not both addressing schemes at once.
     if path is not None and any(v is not None for v in [game, version, file_name]):
         raise ValueError("Use either 'path' or 'game'/'version'/'file_name', not both.")
-    
-    # Load
+
+    # Path-less load needs the full (game, version, file_name) triple.
     if path is None and any(v is None for v in [game, version, file_name]):
         raise ValueError("Either 'path' or all of 'game', 'version', 'file_name' must be provided.")
-    
+
     parent_dir = "checkpoints" if parent_dir is None else parent_dir
     cache_key = path or f"{parent_dir}/{game}/{version}/{file_name}"
 
@@ -85,6 +75,20 @@ def load_network(
         _network_cache[cache_key] = PolicyValueNetwork.load(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
     return _network_cache[cache_key]
+
+def load_or_build_network(
+    path:       str  = None,
+    game:       str  = None,
+    version:    str  = None,
+    file_name:  str  = None,
+    parent_dir: str  = None,
+) -> PolicyValueNetwork:
+    if path is None and file_name is None:
+        if game is None:
+            raise ValueError("'game' is required.")
+        return build_network(game=game, version=version or "latest")
+
+    return load_network(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
 
 # ── Buffer ────────────────────────────────────────────────────────────────────
@@ -103,18 +107,13 @@ def load_buffer(
     version:    str  = None,
     file_name:  str  = None,
     parent_dir: str  = None,
-    max_size:   int  = 10000,
-    seed:       int  = 42,
 ) -> ReplayBuffer:
-    # Nothing to load from → build a fresh empty buffer.
     if path is None and file_name is None:
-        return build_buffer(max_size=max_size, seed=seed)
+        raise ValueError("Must provide 'path', or 'file_name' (with 'game'/'version'), to load a buffer.")
 
-    # Not both addressing schemes at once.
     if path is not None and any(v is not None for v in [game, version, file_name]):
         raise ValueError("Use either 'path' or 'game'/'version'/'file_name', not both.")
 
-    # Path-less load needs the full (game, version, file_name) triple.
     if path is None and any(v is None for v in [game, version, file_name]):
         raise ValueError("Either 'path' or all of 'game', 'version', 'file_name' must be provided.")
 
@@ -128,6 +127,21 @@ def load_buffer(
         )
 
     return _buffer_cache[cache_key]
+
+def load_or_build_buffer(
+    path:       str  = None,
+    game:       str  = None,
+    version:    str  = None,
+    file_name:  str  = None,
+    parent_dir: str  = None,
+    max_size:   int  = 10000,
+    seed:       int  = 42,
+) -> ReplayBuffer:
+    # Nothing to load from → build a fresh empty buffer.
+    if path is None and file_name is None:
+        return build_buffer(max_size=max_size, seed=seed)
+
+    return load_buffer(path=path, game=game, version=version, file_name=file_name, parent_dir=parent_dir)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 

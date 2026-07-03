@@ -1,5 +1,6 @@
 .env.lichess
 **/*.pgn
 states.pt
+default.pt
 target.csv
 legal_masks.pt

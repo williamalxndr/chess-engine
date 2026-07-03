@@ -62,7 +62,7 @@ class Pipeline:
         self.kaggle           = kaggle
 
         # Network
-        self.network = network or factory.load_network(
+        self.network = network or factory.load_or_build_network(
             path=path, game=game, version=version,
             file_name=load_file_name, parent_dir=parent_dir,
         )
