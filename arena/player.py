@@ -5,7 +5,7 @@ import chess
 
 from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS, VanillaMCTS
-from game.rules import RULES_REGISTRY, int_to_move, move_to_int
+from game.rules import int_to_move, move_to_int
 from core.encoder import *
 from game.env import Environment
 
@@ -87,9 +87,9 @@ class HumanPlayer(Player):
         return terminated, reward
 
 class NetworkMCTSPlayer(Player):
-    def __init__(self, network: PolicyValueNetwork, game: str):
+    def __init__(self, network: PolicyValueNetwork, game: str, num_rollout=2000):
         super().__init__()
-        self.mcts = NetworkMCTS(network, epsilon=0)
+        self.mcts = NetworkMCTS(game=game, num_rollout=num_rollout, network=network, epsilon=0)
         self.is_bot = True
 
     def reset(self):
