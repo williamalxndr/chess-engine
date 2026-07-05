@@ -10,7 +10,7 @@ from core import factory
 from selfplay.generator import SelfPlayGenerator
 
 class Trainer:
-    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Adam, T_max=100):
+    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Optimizer, T_max=100):
         self.network = network
         self.optimizer = optimizer
         self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max or 100)
