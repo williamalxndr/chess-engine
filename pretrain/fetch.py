@@ -16,7 +16,17 @@ encoder = Encoder.get("chess")
 
 RESULT_MAP = {"1-0": -1, "0-1": 1, "1/2-1/2": 0, "*": None}
 
-def fetch_pgn(file_path, display=True, skip_moves=10):
+
+
+def color_mirror_move(move: chess.Move) -> chess.Move:
+    return chess.Move(
+        chess.square_mirror(move.from_square),
+        chess.square_mirror(move.to_square),
+        promotion=move.promotion,
+    )
+
+
+def fetch_pgn(file_path, display=True, skip_moves=10, augment_mirror=True):
     rows = []
     game_stats = []
 
@@ -73,6 +83,16 @@ def fetch_pgn(file_path, display=True, skip_moves=10):
                     "policy": policy,
                     "legal_mask": legal_mask
                 })
+
+                if augment_mirror:
+                    mirrored_board = board.mirror()
+                    mirrored_move = color_mirror_move(move)
+                    rows.append({
+                        "encoded_state": encoder.encode(mirrored_board),
+                        "value": -value, 
+                        "policy": move_to_int(mirrored_move),
+                        "legal_mask": encoder.legal_action_mask(mirrored_board),
+                    })
 
                 board.push(move)
 
@@ -154,7 +174,7 @@ def print_statistics(all_game_stats):
     print("=" * 50)
 
 
-def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10):
+def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment_mirror=True):
     all_rows = []
     all_game_stats = []
     pgn_files = sorted(glob.glob(f"{folder_path}/*.pgn"))
@@ -163,7 +183,7 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10):
 
     for file_path in pgn_files:
         print(f"\n=== {file_path} ===")
-        rows, game_stats = fetch_pgn(file_path, display=display, skip_moves=skip_moves)
+        rows, game_stats = fetch_pgn(file_path, display=display, skip_moves=skip_moves, augment_mirror=augment_mirror)
         all_rows.extend(rows)
         all_game_stats.extend(game_stats)
         print(f"Total rows so far: {len(all_rows)}")
@@ -173,12 +193,21 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10):
     return df
 
 
-df = fetch_all(display=False, skip_moves=10)
+if __name__ == "__main__":
+    _board = chess.Board()
+    _board.push_san("e4")  # non-symmetric position so the check isn't trivial
+    for _move in _board.legal_moves:
+        _mirrored_board = _board.mirror()
+        _mirrored_move = color_mirror_move(_move)
+        assert _mirrored_board.is_valid(), "Mirrored board is invalid!"
+        assert _mirrored_move in _mirrored_board.legal_moves, f"Mirrored move {_mirrored_move} not legal on mirrored board!"
 
-states = torch.stack(df["encoded_state"].tolist())  # (N, 30, 8, 8)
-legal_masks = torch.stack(df["legal_mask"].tolist())
+    df = fetch_all(display=False, skip_moves=10, augment_mirror=True)
 
-# Save
-torch.save(states, "pretrain/states.pt")
-torch.save(legal_masks, "pretrain/legal_masks.pt")
-df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)
+    states = torch.stack(df["encoded_state"].tolist())  # (N, 30, 8, 8)
+    legal_masks = torch.stack(df["legal_mask"].tolist())
+
+    # Save
+    torch.save(states, "pretrain/states.pt")
+    torch.save(legal_masks, "pretrain/legal_masks.pt")
+    df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)

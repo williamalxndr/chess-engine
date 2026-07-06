@@ -21,7 +21,7 @@ class Trainer:
     def policy_loss(self, policy_logits: torch.Tensor, policy_true: torch.Tensor, mask: torch.Tensor, label_smoothing=0.0):
         if label_smoothing > 0:
             num_legal = mask.sum(dim=1, keepdim=True).float()
-            uniform_over_legal = mask.float() / num_legal   # 0 di illegal, 1/num_legal di legal
+            uniform_over_legal = mask.float() / num_legal 
             policy_true = policy_true * (1 - label_smoothing) + label_smoothing * uniform_over_legal
 
         log_probs = torch.nn.functional.log_softmax(policy_logits, dim=1)
