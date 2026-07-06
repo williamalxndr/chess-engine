@@ -12,11 +12,12 @@ from game.rules import Rules
 from core.encoder import Encoder
 
 class ValueHead(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, p=0.3):
         super().__init__()
         self.net = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
+            nn.Dropout(p),
             nn.Linear(in_channels, 1),
             nn.Tanh(),
         )
