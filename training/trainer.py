@@ -3,29 +3,37 @@ import torch
 from torch import nn
 import torch.optim.lr_scheduler as lr_scheduler
 import time
+import numpy as np
 
 from core.network import PolicyValueNetwork
 from profiler import timing as prof
 from core import factory
 from selfplay.generator import SelfPlayGenerator
+from game.rules import Rules
 
 class Trainer:
-    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Optimizer, T_max=100):
+    def __init__(self, network: PolicyValueNetwork, optimizer: optim.Optimizer, T_max=100, game="chess"):
         self.network = network
         self.optimizer = optimizer
         self.scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max or 100)
+        self.rules = Rules.get(game=game)
 
-    def policy_loss(self, policy_logits, policy_true, epsilon=1e-15):
+    def policy_loss(self, policy_logits: torch.Tensor, policy_true: torch.Tensor, mask: torch.Tensor, label_smoothing=0.0):
+        if label_smoothing > 0:
+            num_legal = mask.sum(dim=1, keepdim=True).float()
+            uniform_over_legal = mask.float() / num_legal   # 0 di illegal, 1/num_legal di legal
+            policy_true = policy_true * (1 - label_smoothing) + label_smoothing * uniform_over_legal
+
         log_probs = torch.nn.functional.log_softmax(policy_logits, dim=1)
         a = policy_true * log_probs
         return -torch.mean(a.sum(dim=1))
 
-    def value_loss(self, value_pred, value_true):
+    def value_loss(self, value_pred: torch.Tensor, value_true: torch.Tensor):
         loss_fn = nn.MSELoss()
         loss = loss_fn(value_pred, value_true)
         return loss
 
-    def step(self, s, pi, mask, z):
+    def step(self, s, pi, mask, z, label_smoothing=0.1):
         start = time.time()
 
         self.optimizer.zero_grad(set_to_none=True)
@@ -40,9 +48,9 @@ class Trainer:
         policy_head, value_head = self.network(s)
 
         # masking illegal action
-        policy_head = policy_head.masked_fill(~mask, -1e-9)
+        policy_head = policy_head.masked_fill(~mask, -1e9)
 
-        p_loss = self.policy_loss(policy_head, pi)
+        p_loss = self.policy_loss(policy_head, pi, mask, label_smoothing=label_smoothing)
         v_loss = self.value_loss(value_head, z)
         loss = p_loss + v_loss
 
