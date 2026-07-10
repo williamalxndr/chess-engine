@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 import glob
 import logging
+from huggingface_hub import HfApi, create_repo
 
 from core.encoder import Encoder
 from core.encoder import move_to_int
@@ -183,13 +184,11 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment
 
     for file_path in pgn_files:
         print(f"\n=== {file_path} ===")
-        
         try:
             rows, game_stats = fetch_pgn(file_path, display=display, skip_moves=skip_moves, augment_mirror=augment_mirror)
         except Exception as e:
             print(f"FAILED on {file_path}: {e}")
             continue
-
         all_rows.extend(rows)
         all_game_stats.extend(game_stats)
         print(f"Total rows so far: {len(all_rows)}")
@@ -197,6 +196,34 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment
     df = pd.DataFrame(all_rows)
     print_statistics(all_game_stats)
     return df
+
+
+def push_to_hub(repo_id, files, repo_type="dataset", private=False, commit_message="Add pretrain data"):
+    """
+    Upload a list of local files to a Hugging Face Hub repo.
+
+    repo_id: e.g. "williamalxndr/chess-pretrain-data"
+    files: list of local paths to upload (uploaded under the same filename at repo root)
+    repo_type: "dataset" (recommended for .pt/.csv artifacts) or "model"
+
+    Requires being logged in (`huggingface-cli login`) or HF_TOKEN set in the environment.
+    """
+    api = HfApi()
+
+    create_repo(repo_id, repo_type=repo_type, private=private, exist_ok=True)
+
+    for file_path in files:
+        print(f"Uploading {file_path} -> {repo_id} ({repo_type})")
+        api.upload_file(
+            path_or_fileobj=file_path,
+            path_in_repo=file_path.split("/")[-1],
+            repo_id=repo_id,
+            repo_type=repo_type,
+            commit_message=commit_message,
+        )
+
+    print(f"Done. View at: https://huggingface.co/datasets/{repo_id}" if repo_type == "dataset"
+          else f"Done. View at: https://huggingface.co/{repo_id}")
 
 
 if __name__ == "__main__":
@@ -217,3 +244,11 @@ if __name__ == "__main__":
     torch.save(states, "pretrain/states.pt")
     torch.save(legal_masks, "pretrain/legal_masks.pt")
     df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)
+
+    # Push to Hugging Face Hub
+    push_to_hub(
+        repo_id="williamalxndr/chess-pretrain-data",
+        files=["pretrain/states.pt", "pretrain/legal_masks.pt", "pretrain/target.csv"],
+        repo_type="dataset",
+        private=False,
+    )
