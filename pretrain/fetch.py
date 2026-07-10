@@ -30,7 +30,7 @@ def fetch_pgn(file_path, display=True, skip_moves=10, augment_mirror=True):
     rows = []
     game_stats = []
 
-    with open(file_path) as pgn:
+    with open(file_path, encoding='latin-1') as pgn:
         while True:
             game = chess.pgn.read_game(pgn)
             if game is None:
@@ -183,7 +183,13 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment
 
     for file_path in pgn_files:
         print(f"\n=== {file_path} ===")
-        rows, game_stats = fetch_pgn(file_path, display=display, skip_moves=skip_moves, augment_mirror=augment_mirror)
+        
+        try:
+            rows, game_stats = fetch_pgn(file_path, display=display, skip_moves=skip_moves, augment_mirror=augment_mirror)
+        except Exception as e:
+            print(f"FAILED on {file_path}: {e}")
+            continue
+
         all_rows.extend(rows)
         all_game_stats.extend(game_stats)
         print(f"Total rows so far: {len(all_rows)}")
