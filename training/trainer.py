@@ -40,12 +40,15 @@ class Trainer:
         self.network.train()
 
         device = next(self.network.parameters()).device
+        dtype  = next(self.network.parameters()).dtype
 
+        s = s.to(device=device, dtype=dtype)
         pi = pi.to(device)
         z  = z.to(device)
         mask = mask.to(device)
 
         policy_head, value_head = self.network(s)
+        
 
         # masking illegal action
         policy_head = policy_head.masked_fill(~mask, -1e9)
