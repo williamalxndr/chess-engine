@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 import glob
 import logging
+from pathlib import Path
 from huggingface_hub import HfApi, create_repo
 
 from core.encoder import Encoder
@@ -175,9 +176,25 @@ def print_statistics(all_game_stats):
     print("=" * 50)
 
 
-def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment_mirror=True):
-    all_rows = []
+def _save_shard(rows, shard_dir, shard_name):
+    states      = torch.stack([r["encoded_state"] for r in rows])
+    legal_masks = torch.stack([r["legal_mask"] for r in rows])
+    values      = torch.tensor([r["value"] for r in rows], dtype=torch.float32)
+    policies    = torch.tensor([r["policy"] for r in rows], dtype=torch.long)
+
+    torch.save(states, f"{shard_dir}/{shard_name}_states.pt")
+    torch.save(legal_masks, f"{shard_dir}/{shard_name}_masks.pt")
+    torch.save({"value": values, "policy": policies}, f"{shard_dir}/{shard_name}_targets.pt")
+
+    return len(rows)
+
+
+def fetch_all(folder_path="pretrain/games", shard_dir="pretrain/shards",
+              display=True, skip_moves=10, augment_mirror=True,
+              push_repo=None):
+    Path(shard_dir).mkdir(parents=True, exist_ok=True)
     all_game_stats = []
+    total_rows = 0
     pgn_files = sorted(glob.glob(f"{folder_path}/*.pgn"))
 
     print(f"Found {len(pgn_files)} PGN files")
@@ -189,13 +206,26 @@ def fetch_all(folder_path="pretrain/games", display=True, skip_moves=10, augment
         except Exception as e:
             print(f"FAILED on {file_path}: {e}")
             continue
-        all_rows.extend(rows)
-        all_game_stats.extend(game_stats)
-        print(f"Total rows so far: {len(all_rows)}")
 
-    df = pd.DataFrame(all_rows)
+        all_game_stats.extend(game_stats)
+
+        if not rows:
+            continue
+
+        shard_name = Path(file_path).stem
+        n = _save_shard(rows, shard_dir, shard_name)
+        total_rows += n
+        print(f"Shard saved: {shard_name} ({n} rows) | Total rows so far: {total_rows}")
+
+        # Rows (and the tensors just built from them) go out of scope here --
+        # nothing from this file is kept in memory past this point.
+        del rows
+
+        if push_repo:
+            _push_shard_to_hub(push_repo, shard_dir, shard_name)
+
     print_statistics(all_game_stats)
-    return df
+    print(f"\nAll shards written to {shard_dir}/ ({total_rows} total rows across {len(pgn_files)} files)")
 
 
 def push_to_hub(repo_id, files, repo_type="dataset", private=False, commit_message="Add pretrain data"):
@@ -226,6 +256,27 @@ def push_to_hub(repo_id, files, repo_type="dataset", private=False, commit_messa
           else f"Done. View at: https://huggingface.co/{repo_id}")
 
 
+def _push_shard_to_hub(repo_id, shard_dir, shard_name, delete_after=True):
+    api = HfApi()
+    create_repo(repo_id, repo_type="dataset", private=False, exist_ok=True)
+
+    shard_files = [
+        f"{shard_dir}/{shard_name}_states.pt",
+        f"{shard_dir}/{shard_name}_masks.pt",
+        f"{shard_dir}/{shard_name}_targets.pt",
+    ]
+    for f in shard_files:
+        api.upload_file(
+            path_or_fileobj=f,
+            path_in_repo=Path(f).name,
+            repo_id=repo_id,
+            repo_type="dataset",
+            commit_message=f"Add shard {shard_name}",
+        )
+        if delete_after:
+            Path(f).unlink()  # free disk too, not just RAM
+
+
 if __name__ == "__main__":
     _board = chess.Board()
     _board.push_san("e4")  # non-symmetric position so the check isn't trivial
@@ -235,20 +286,9 @@ if __name__ == "__main__":
         assert _mirrored_board.is_valid(), "Mirrored board is invalid!"
         assert _mirrored_move in _mirrored_board.legal_moves, f"Mirrored move {_mirrored_move} not legal on mirrored board!"
 
-    df = fetch_all(display=False, skip_moves=10, augment_mirror=True)
-
-    states = torch.stack(df["encoded_state"].tolist())  # (N, 30, 8, 8)
-    legal_masks = torch.stack(df["legal_mask"].tolist())
-
-    # Save
-    torch.save(states, "pretrain/states.pt")
-    torch.save(legal_masks, "pretrain/legal_masks.pt")
-    df[["value", "policy"]].to_csv("pretrain/target.csv", index=False)
-
-    # Push to Hugging Face Hub
-    push_to_hub(
-        repo_id="williamalxndr/chess-pretrain-data",
-        files=["pretrain/states.pt", "pretrain/legal_masks.pt", "pretrain/target.csv"],
-        repo_type="dataset",
-        private=False,
+    fetch_all(
+        display=False,
+        skip_moves=10,
+        augment_mirror=True,
+        push_repo="williamalxndr/chess-pretrain-data",  # set to None to skip HF upload entirely
     )
