@@ -22,4 +22,4 @@ logging:
 hf:
   push_to_hf: true
   load_from_hf: true
-  repo_id: williamalxndr/chess-trained-network
+  repo_id: williamalxndr/net0
