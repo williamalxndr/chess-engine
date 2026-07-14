@@ -1,18 +1,25 @@
 game: chess
-version: V2
-file_name: v2
+version: v2
+file_name: air
 
 mcts:
-  num_rollout: 256
-  mcts_batch_size: 32
-  num_selfplay: 8
+  num_rollout: 100
+  mcts_batch_size: 16
 
 training:
-  duration: 5
+  duration: 6.0
+  iterations: null
   steps_per_iter: 200
-  train_batch_size: 128
-  replay_buffer_max_size: 50000
+  train_batch_size: 32
+  replay_buffer_max_size: 10000
+  num_selfplay: 2
 
 logging:
   kaggle: true
+  verbose: false
   log_interval: 1
+
+hf:
+  push_to_hf: true
+  load_from_hf: true
+  repo_id: williamalxndr/chess-trained-network

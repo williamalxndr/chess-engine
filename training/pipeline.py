@@ -18,7 +18,7 @@ from core.network import PolicyValueNetwork
 from selfplay.replay_buffer import ReplayBuffer
 from selfplay.generator import SelfPlayGenerator
 from training.trainer import Trainer
-from training.profiler import profile_pipeline, profile_cpu
+from training.profiler import profile_pipeline
 from core import factory
 from core.config import load_config
 
@@ -48,6 +48,9 @@ class Pipeline:
                  patience: int = 50,
                  verbose: bool = False,
                  kaggle: bool = False,
+                 push_to_hf: bool = False,
+                 hf_repo_id: str = "williamalxndr/chess-trained-network",
+                 load_from_hf: bool = False
                  ):
         self.game             = game
         self.version          = version
@@ -60,12 +63,28 @@ class Pipeline:
         self.patience         = patience
         self.verbose          = verbose
         self.kaggle           = kaggle
+        self.push_to_hf       = push_to_hf
+        self.hf_repo_id       = hf_repo_id
+
+        # Validation
+        if push_to_hf and hf_repo_id is None:
+            raise ValueError("push_to_hf=True requires hf_repo_id (e.g. 'username/repo-name')")
+        if load_from_hf and hf_repo_id is None:
+            raise ValueError("load_from_hf=True requires hf_repo_id (e.g. 'username/repo-name')")
 
         # Network
-        self.network = network or factory.load_or_build_network(
-            path=path, game=game, version=version,
-            file_name=load_file_name, parent_dir=parent_dir,
-        )
+        if network is not None:
+            self.network = network
+        elif load_from_hf:
+            self.network = PolicyValueNetwork.load_from_hub(
+                repo_id=hf_repo_id, game=game, version=version, file_name=load_file_name,
+            )
+            print(f"Network pulled from https://huggingface.co/{hf_repo_id}")
+        else:
+            self.network = factory.load_or_build_network(
+                path=path, game=game, version=version,
+                file_name=load_file_name, parent_dir=parent_dir,
+            )
 
         # Replay buffer
         _buffer_path = Path(f"{parent_dir}/{game}/{version}/{buffer_file_name}_buffer.pt") if buffer_file_name else None
@@ -91,7 +110,7 @@ class Pipeline:
         )
 
         # Trainer and optimizer
-        self.optimizer = optim.Adam(self.network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer
+        self.optimizer = optim.AdamW(self.network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer
         self.trainer = Trainer(
             self.network,
             self.optimizer,
@@ -109,8 +128,8 @@ class Pipeline:
         return self.replay_buffer.sample(self.train_batch_size)
 
     def train_step(self):
-        s, pi, z = self.sample()
-        return self.trainer.step(s, pi, z)
+        s, pi, mask, z = self.sample()
+        return self.trainer.step(s, pi, mask, z)
 
     def train(self, duration_hours=None, log_interval=1):
         start = time.time()
@@ -131,10 +150,6 @@ class Pipeline:
 
                 if self._should_stop(current_time, start_time, duration_seconds, iteration):
                     break
-
-                if iteration == 0:
-                    self.network.eval()
-                    profile_cpu(generate_fn=self.generate)
 
                 self.network.eval()
                 self.generate()
@@ -232,9 +247,12 @@ class Pipeline:
         return copy.deepcopy(self.network)
 
     def save(self, parent_dir: str):
-        file_name  = self.save_file_name
+        file_name = self.save_file_name
         network = self.network.module if isinstance(self.network, DDP) else self.network
-        network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
+        network.save(
+            self.game, self.version, file_name=file_name, parent_dir=parent_dir,
+            push_to_hf=self.push_to_hf, repo_id=self.hf_repo_id,
+        )
         self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
 
 if __name__ == "__main__":
@@ -260,26 +278,16 @@ if __name__ == "__main__":
         network = factory.build_network(cfg.game, cfg.version)
         optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
 
-    kaggle_network_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.network}/{cfg.file_name}.pt") if cfg.kaggle_datasets.network else None
-    local_network_path  = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
+    local_network_path = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
 
-    if kaggle_network_path and kaggle_network_path.is_file():
-        network_path, network_file_name = str(kaggle_network_path), None
-        print(f"Network: Kaggle {kaggle_network_path}")
-    elif local_network_path and local_network_path.is_file():
+    if local_network_path and local_network_path.is_file():
         network_path, network_file_name = None, cfg.file_name
         print(f"Network loaded from local checkpoint {local_network_path}")
     else:
         network_path, network_file_name = None, None
         print("Network created")
 
-    kaggle_buffer_path = Path(f"/kaggle/input/{cfg.kaggle_datasets.buffer}/{cfg.file_name}_buffer.pt") if cfg.kaggle_datasets.buffer else None
-
-    if kaggle_buffer_path and kaggle_buffer_path.is_file():
-        buffer_path, buffer_file_name = str(kaggle_buffer_path), None
-        print(f"Buffer: Kaggle {kaggle_buffer_path}")
-    else:
-        buffer_path, buffer_file_name = None, cfg.file_name
+    buffer_path, buffer_file_name = None, cfg.file_name
 
     pipeline = Pipeline(
         game=cfg.game,
@@ -296,10 +304,13 @@ if __name__ == "__main__":
         train_batch_size=cfg.training.train_batch_size,
         mcts_batch_size=cfg.mcts.mcts_batch_size,
         num_rollout=cfg.mcts.num_rollout,
-        num_selfplay=cfg.mcts.num_selfplay,
+        num_selfplay=cfg.training.num_selfplay,
         replay_buffer_max_size=cfg.training.replay_buffer_max_size,
         verbose=cfg.logging.verbose,
         kaggle=cfg.logging.kaggle,
+        push_to_hf=cfg.hf.push_to_hf,
+        load_from_hf=cfg.hf.load_from_hf,
+        hf_repo_id=cfg.hf.repo_id
     )
 
     pipeline.train(

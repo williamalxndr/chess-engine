@@ -162,8 +162,6 @@ class SelfPlayGenerator:
 
             step_results[wid] = (encoded, torch.tensor(policy), game_over, result, legal_mask)
         
-        print(".", end="", flush=True)
-
         return step_results
 
     def generate(self, num_games=1):

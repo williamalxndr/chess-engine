@@ -1,0 +1,25 @@
+game: chess
+version: V2
+file_name: test_checkpoint
+
+mcts:
+  num_rollout: 32
+  mcts_batch_size: 4
+
+training:
+  duration: null
+  iterations: 3
+  steps_per_iter: 5
+  train_batch_size: 8
+  replay_buffer_max_size: 1000
+  num_selfplay: 1
+
+logging:
+  kaggle: false
+  verbose: true
+  log_interval: 1
+
+hf:
+  push_to_hf: false
+  load_from_hf: false
+  repo_id: null

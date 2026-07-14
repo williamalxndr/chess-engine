@@ -11,7 +11,6 @@ import yaml
 class MCTSConfig:
     num_rollout: int = 64
     mcts_batch_size: int = 8
-    num_selfplay: int = 4
 
 
 @dataclass
@@ -21,6 +20,7 @@ class TrainingConfig:
     steps_per_iter: int = 64
     train_batch_size: int = 16
     replay_buffer_max_size: int = 10000
+    num_selfplay: int = 4
 
 
 @dataclass
@@ -31,9 +31,10 @@ class LoggingConfig:
 
 
 @dataclass
-class KaggleDatasets:
-    network: Optional[str] = None
-    buffer: Optional[str] = None
+class HFConfig:
+    push_to_hf:   bool = False
+    load_from_hf: bool = False
+    repo_id:      Optional[str] = None
 
 
 @dataclass
@@ -45,7 +46,7 @@ class Config:
     mcts: MCTSConfig = field(default_factory=MCTSConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    kaggle_datasets: KaggleDatasets = field(default_factory=KaggleDatasets)
+    hf: HFConfig = field(default_factory=HFConfig)
 
     def summary(self) -> str:
         lines = [
@@ -54,10 +55,8 @@ class Config:
             f"  training: duration={self.training.duration}h  iters={self.training.iterations}  steps={self.training.steps_per_iter}  batch={self.training.train_batch_size}  buffer={self.training.replay_buffer_max_size}",
             f"  logging : kaggle={self.logging.kaggle}  verbose={self.logging.verbose}  log_interval={self.logging.log_interval}",
         ]
-        if self.kaggle_datasets.network:
-            lines.append(f"  datasets: network={self.kaggle_datasets.network}")
-        if self.kaggle_datasets.buffer:
-            lines.append(f"            buffer={self.kaggle_datasets.buffer}")
+        if self.hf.push_to_hf or self.hf.load_from_hf:
+            lines.append(f"  hf      : push={self.hf.push_to_hf}  load={self.hf.load_from_hf}  repo={self.hf.repo_id}")
         return "\n".join(lines)
 
 
@@ -91,8 +90,9 @@ def _apply_cli_overrides(cfg: Config, overrides: argparse.Namespace) -> Config:
         "kaggle":                   ("logging",  "kaggle"),
         "verbose":                  ("logging",  "verbose"),
         "log_interval":             ("logging",  "log_interval"),
-        "kaggle_network":           ("datasets", "network"),
-        "kaggle_buffer":            ("datasets", "buffer"),
+        "push_to_hf":               ("hf",       "push_to_hf"),
+        "load_from_hf":             ("hf",       "load_from_hf"),
+        "hf_repo_id":               ("hf",       "repo_id"),
     }
     for cli_key, (section, attr) in mapping.items():
         val = getattr(overrides, cli_key, None)
@@ -106,8 +106,8 @@ def _apply_cli_overrides(cfg: Config, overrides: argparse.Namespace) -> Config:
             setattr(cfg.training, attr, val)
         elif section == "logging":
             setattr(cfg.logging, attr, val)
-        elif section == "datasets":
-            setattr(cfg.kaggle_datasets, attr, val)
+        elif section == "hf":
+            setattr(cfg.hf, attr, val)
     return cfg
 
 
@@ -131,8 +131,9 @@ def load_config(argv: list[str] = None) -> Config:
     parser.add_argument("--log_interval",           type=int,   default=None)
     parser.add_argument("--kaggle",                 action="store_true", default=None)
     parser.add_argument("--verbose",                action="store_true", default=None)
-    parser.add_argument("--kaggle_network",         type=str,   default=None)
-    parser.add_argument("--kaggle_buffer",          type=str,   default=None)
+    parser.add_argument("--push_to_hf",             action="store_true", default=None)
+    parser.add_argument("--load_from_hf",           action="store_true", default=None)
+    parser.add_argument("--hf_repo_id",             type=str,   default=None)
 
     args, _ = parser.parse_known_args(argv)
 
@@ -142,7 +143,7 @@ def load_config(argv: list[str] = None) -> Config:
         if not yaml_path.is_absolute():
             yaml_path = root / yaml_path
     else:
-        yaml_path = root / "configs" / "local.yaml"
+        yaml_path = root / "configs" / "test.yaml"
 
     if not yaml_path.exists():
         available = [p.name for p in (root / "configs").glob("*.yaml")]
@@ -157,7 +158,14 @@ def load_config(argv: list[str] = None) -> Config:
         mcts      = MCTSConfig(**raw.get("mcts", {})),
         training  = TrainingConfig(**raw.get("training", {})),
         logging   = LoggingConfig(**raw.get("logging", {})),
-        kaggle_datasets = KaggleDatasets(**raw.get("kaggle_datasets", {})),
+        hf        = HFConfig(**raw.get("hf", {})),
     )
 
-    return _apply_cli_overrides(cfg, args)
+    cfg = _apply_cli_overrides(cfg, args)
+
+    if cfg.hf.push_to_hf and not cfg.hf.repo_id:
+        raise ValueError("hf.push_to_hf=True requires hf.repo_id to be set (config or --hf_repo_id).")
+    if cfg.hf.load_from_hf and not cfg.hf.repo_id:
+        raise ValueError("hf.load_from_hf=True requires hf.repo_id to be set (config or --hf_repo_id).")
+
+    return cfg
