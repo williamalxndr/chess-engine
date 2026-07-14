@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 import glob
 import logging
+import argparse
 from pathlib import Path
 from huggingface_hub import HfApi, create_repo
 
@@ -189,15 +190,27 @@ def _save_shard(rows, shard_dir, shard_name):
     return len(rows)
 
 
+def _resolve_start_index(pgn_files, start_from):
+    start_stem = Path(start_from).stem
+    for i, f in enumerate(pgn_files):
+        if Path(f).stem == start_stem:
+            return i
+    raise ValueError(f"--start-from '{start_from}' not found in PGN file list")
+
+
 def fetch_all(folder_path="pretrain/games", shard_dir="pretrain/shards",
               display=True, skip_moves=10, augment_mirror=True,
-              push_repo=None):
+              push_repo=None, start_from=None):
     Path(shard_dir).mkdir(parents=True, exist_ok=True)
     all_game_stats = []
     total_rows = 0
     pgn_files = sorted(glob.glob(f"{folder_path}/*.pgn"))
 
-    print(f"Found {len(pgn_files)} PGN files")
+    if start_from:
+        idx = _resolve_start_index(pgn_files, start_from)
+        pgn_files = pgn_files[idx:]
+
+    print(f"Processing {len(pgn_files)} PGN files" + (f" starting at {start_from}" if start_from else ""))
 
     for file_path in pgn_files:
         print(f"\n=== {file_path} ===")
@@ -217,8 +230,6 @@ def fetch_all(folder_path="pretrain/games", shard_dir="pretrain/shards",
         total_rows += n
         print(f"Shard saved: {shard_name} ({n} rows) | Total rows so far: {total_rows}")
 
-        # Rows (and the tensors just built from them) go out of scope here --
-        # nothing from this file is kept in memory past this point.
         del rows
 
         if push_repo:
@@ -229,15 +240,6 @@ def fetch_all(folder_path="pretrain/games", shard_dir="pretrain/shards",
 
 
 def push_to_hub(repo_id, files, repo_type="dataset", private=False, commit_message="Add pretrain data"):
-    """
-    Upload a list of local files to a Hugging Face Hub repo.
-
-    repo_id: e.g. "williamalxndr/chess-pretrain-data"
-    files: list of local paths to upload (uploaded under the same filename at repo root)
-    repo_type: "dataset" (recommended for .pt/.csv artifacts) or "model"
-
-    Requires being logged in (`huggingface-cli login`) or HF_TOKEN set in the environment.
-    """
     api = HfApi()
 
     create_repo(repo_id, repo_type=repo_type, private=private, exist_ok=True)
@@ -274,12 +276,17 @@ def _push_shard_to_hub(repo_id, shard_dir, shard_name, delete_after=True):
             commit_message=f"Add shard {shard_name}",
         )
         if delete_after:
-            Path(f).unlink()  # free disk too, not just RAM
+            Path(f).unlink()
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start-from", type=str, default=None,
+                         help="PGN filename (with or without .pgn) to resume from; processes that file through the end. Omit to process all files.")
+    args = parser.parse_args()
+
     _board = chess.Board()
-    _board.push_san("e4")  # non-symmetric position so the check isn't trivial
+    _board.push_san("e4")
     for _move in _board.legal_moves:
         _mirrored_board = _board.mirror()
         _mirrored_move = color_mirror_move(_move)
@@ -290,5 +297,6 @@ if __name__ == "__main__":
         display=False,
         skip_moves=10,
         augment_mirror=True,
-        push_repo="williamalxndr/chess-pretrain-data",  # set to None to skip HF upload entirely
+        push_repo="williamalxndr/chess-pretrain-data",
+        start_from=args.start_from,
     )

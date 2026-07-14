@@ -1,6 +1,6 @@
 game: chess
-version: V2
-file_name: test_checkpoint
+version: v2
+file_name: test
 
 mcts:
   num_rollout: 32

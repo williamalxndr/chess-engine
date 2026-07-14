@@ -1,18 +1,18 @@
 game: chess
 version: v2
-file_name: air
+file_name: train
 
 mcts:
-  num_rollout: 100
-  mcts_batch_size: 16
+  num_rollout: 256
+  mcts_batch_size: 32
 
 training:
   duration: 6.0
   iterations: null
-  steps_per_iter: 200
-  train_batch_size: 32
-  replay_buffer_max_size: 10000
-  num_selfplay: 2
+  steps_per_iter: 500
+  train_batch_size: 128
+  replay_buffer_max_size: 50000
+  num_selfplay: 8
 
 logging:
   kaggle: true

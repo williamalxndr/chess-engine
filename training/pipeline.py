@@ -7,6 +7,7 @@ from torch import optim
 import copy
 import argparse
 from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
+from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
 from pathlib import Path
 from contextlib import contextmanager
 from torch import distributed as dist
@@ -21,6 +22,7 @@ from training.trainer import Trainer
 from training.profiler import profile_pipeline
 from core import factory
 from core.config import load_config
+from training.evaluation import evaluate
 
 
 class Pipeline:
@@ -50,7 +52,10 @@ class Pipeline:
                  kaggle: bool = False,
                  push_to_hf: bool = False,
                  hf_repo_id: str = "williamalxndr/chess-trained-network",
-                 load_from_hf: bool = False
+                 load_from_hf: bool = False,
+                 eval_interval: int = 0,
+                 eval_games: int = 4,
+                 eval_threshold: float = 0.55,
                  ):
         self.game             = game
         self.version          = version
@@ -92,6 +97,15 @@ class Pipeline:
         if buffer_path is not None:
             self.replay_buffer = ReplayBuffer.load(path=buffer_path)
             print("Buffer loaded from path")
+        elif load_from_hf:
+            try:
+                self.replay_buffer = ReplayBuffer.load_from_hub(
+                    repo_id=hf_repo_id, game=game, version=version, file_name=buffer_file_name,
+                )
+                print(f"Buffer pulled from https://huggingface.co/{hf_repo_id}")
+            except (EntryNotFoundError, RepositoryNotFoundError):
+                self.replay_buffer = ReplayBuffer(replay_buffer_max_size)
+                print("No buffer on HF yet; buffer created")
         elif _buffer_path and _buffer_path.is_file():
             self.replay_buffer = ReplayBuffer.load(game=game, version=version, file_name=buffer_file_name, parent_dir=parent_dir)
             print(f"Buffer loaded from {parent_dir}")
@@ -108,6 +122,17 @@ class Pipeline:
             num_rollout=num_rollout, batch_size=mcts_batch_size,
             seed=rank
         )
+
+        # Evaluation (old vs new gating)
+        self.num_rollout    = num_rollout
+        self.eval_interval  = eval_interval
+        self.eval_games     = eval_games
+        self.eval_threshold = eval_threshold
+        self.is_main        = rank == 0
+        self.best_network   = None
+        if eval_interval:
+            net = self.network.module if isinstance(self.network, DDP) else self.network
+            self.best_network = copy.deepcopy(net)
 
         # Trainer and optimizer
         self.optimizer = optim.AdamW(self.network.parameters(), lr=0.01, fused=True) if optimizer is None else optimizer
@@ -180,6 +205,8 @@ class Pipeline:
                     self.save(parent_dir="kaggle" if self.kaggle else "checkpoints")
                     last_save_time = current_time
 
+                self._maybe_evaluate(iteration)
+
                 self._update_progress(progress, task, current_time, start_time, duration_seconds, loss, policy_loss, v_loss, not_improving)
                 self.trainer.scheduler.step()
                 iteration += 1
@@ -246,6 +273,22 @@ class Pipeline:
     def get_network(self):
         return copy.deepcopy(self.network)
 
+    def _maybe_evaluate(self, iteration):
+        if not (self.eval_interval and self.is_main and iteration > 0
+                and iteration % self.eval_interval == 0):
+            return
+        result = evaluate(
+            self.network, self.best_network,
+            game=self.game, num_rollout=self.num_rollout,
+            num_games=self.eval_games, win_rate_threshold=self.eval_threshold,
+            pgn_dir=f"eval_pgns/{self.game}/{self.version}",
+        )
+        print(f"[eval] iter {iteration} | new {result.new_wins}-{result.old_wins}-{result.draws} old "
+              f"| win_rate {result.win_rate:.2f} | promote={result.promote}")
+        if result.promote:
+            net = self.network.module if isinstance(self.network, DDP) else self.network
+            self.best_network = copy.deepcopy(net)
+
     def save(self, parent_dir: str):
         file_name = self.save_file_name
         network = self.network.module if isinstance(self.network, DDP) else self.network
@@ -253,7 +296,25 @@ class Pipeline:
             self.game, self.version, file_name=file_name, parent_dir=parent_dir,
             push_to_hf=self.push_to_hf, repo_id=self.hf_repo_id,
         )
-        self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir)
+        self.replay_buffer.save(
+            self.game, self.version, file_name=file_name, parent_dir=parent_dir,
+            push_to_hf=self.push_to_hf, repo_id=self.hf_repo_id,
+        )
+
+
+def _resolve_network(cfg):
+    # Resume from HF when requested and a checkpoint exists; otherwise start fresh.
+    if cfg.hf.load_from_hf:
+        try:
+            network = PolicyValueNetwork.load_from_hub(
+                repo_id=cfg.hf.repo_id, game=cfg.game, version=cfg.version, file_name=cfg.file_name,
+            )
+            print(f"Network pulled from https://huggingface.co/{cfg.hf.repo_id}")
+            return network
+        except (EntryNotFoundError, RepositoryNotFoundError):
+            print("No network checkpoint on HF yet; starting fresh")
+    return factory.build_network(cfg.game, cfg.version)
+
 
 if __name__ == "__main__":
     prof.reset()
@@ -268,33 +329,23 @@ if __name__ == "__main__":
         dist.init_process_group(backend)
         rank = dist.get_rank()
 
-        # Wrap the network and optimizer to DDP
+        # Wrap the resolved network for DDP (DDP broadcasts rank-0 weights at init)
         device_id = rank % torch.accelerator.device_count()
-        network = factory.build_ddp(device_id, game=cfg.game, version=cfg.version)
-        
-        optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
-    
-    else:
-        network = factory.build_network(cfg.game, cfg.version)
+        network = DDP(_resolve_network(cfg).to(device_id), device_ids=[device_id])
         optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
 
-    local_network_path = Path(f"checkpoints/{cfg.game}/{cfg.version}/{cfg.file_name}.pt") if cfg.file_name else None
-
-    if local_network_path and local_network_path.is_file():
-        network_path, network_file_name = None, cfg.file_name
-        print(f"Network loaded from local checkpoint {local_network_path}")
     else:
-        network_path, network_file_name = None, None
-        print("Network created")
+        network = _resolve_network(cfg)
+        optimizer = optim.Adam(network.parameters(), lr=0.01, fused=True)
 
     buffer_path, buffer_file_name = None, cfg.file_name
 
     pipeline = Pipeline(
         game=cfg.game,
         version=cfg.version,
-        load_file_name=network_file_name,
+        load_file_name=None,
         save_file_name=cfg.file_name,
-        path=network_path,
+        path=None,
         buffer_file_name=buffer_file_name,
         buffer_path=buffer_path,
         network=network,
@@ -310,7 +361,9 @@ if __name__ == "__main__":
         kaggle=cfg.logging.kaggle,
         push_to_hf=cfg.hf.push_to_hf,
         load_from_hf=cfg.hf.load_from_hf,
-        hf_repo_id=cfg.hf.repo_id
+        hf_repo_id=cfg.hf.repo_id,
+        eval_interval=20,
+        eval_games=4,
     )
 
     pipeline.train(
@@ -321,4 +374,3 @@ if __name__ == "__main__":
     if dist.is_available() and dist.is_initialized(): 
         dist.destroy_process_group()
     
-    print(prof.summary())
