@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from pathlib import Path
 from abc import ABC, abstractmethod
 import numpy as np
-import re
+from huggingface_hub import HfApi, create_repo, hf_hub_download
+from pathlib import Path
 
 from core.node import Node
 from core.utils import resolve_latest
@@ -80,8 +81,81 @@ class PolicyValueNetwork(nn.Module, ABC):
         encode = self.encoder.encode
         batch  = torch.stack([encode(n.state) for n in nodes])
         return self.forward(batch)
+    
+    @staticmethod
+    def push_to_hub(
+        file_path:  str,
+        repo_id:    str,
+        path:       str = None,
+        game:       str = None,
+        version:    str = None,
+        file_name:  str = None,
+    ):
+        if repo_id is None:
+            raise ValueError("push_to_hub requires repo_id (e.g. 'username/repo-name')")
 
-    def save(self, game: str = "chess", version: str = "v2", file_name: str = "example", parent_dir: str = "checkpoints", path: str=None):
+        if path is None and file_name is None:
+            raise ValueError("Must provide 'path', or 'file_name' (with 'game'/'version'), for the repo destination.")
+
+        if path is not None and any(v is not None for v in [game, version, file_name]):
+            raise ValueError("Use either 'path' or 'game'/'version'/'file_name', not both.")
+
+        if path is None and any(v is None for v in [game, version, file_name]):
+            raise ValueError("Either 'path' or all of 'game', 'version', 'file_name' must be provided.")
+
+        create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
+
+        api = HfApi()
+        path_in_repo = path or f"{game}/{version}/{file_name}.pt"
+
+        api.upload_file(
+            path_or_fileobj=str(file_path),
+            path_in_repo=path_in_repo,
+            repo_id=repo_id,
+            repo_type="model",
+        )
+        print(f"Pushed to https://huggingface.co/{repo_id}")
+
+    @staticmethod
+    def pull_from_hub(
+        repo_id:    str,
+        path:       str = None,
+        game:       str = None,
+        version:    str = None,
+        file_name:  str = None,
+        local_dir:  str = None,
+        revision:   str = None,
+    ) -> str:
+        """Download a checkpoint file from HF Hub. Returns the local file path.
+
+        Provide either `path` (exact path within the repo) or all of
+        `game`/`version`/`file_name`, not both.
+        """
+        if path is None and file_name is None:
+            raise ValueError("Must provide 'path', or 'file_name' (with 'game'/'version'), to pull a checkpoint.")
+
+        if path is not None and any(v is not None for v in [game, version, file_name]):
+            raise ValueError("Use either 'path' or 'game'/'version'/'file_name', not both.")
+
+        if path is None and any(v is None for v in [game, version, file_name]):
+            raise ValueError("Either 'path' or all of 'game', 'version', 'file_name' must be provided.")
+
+        path_in_repo = path or f"{game}/{version}/{file_name}.pt"
+
+        local_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=path_in_repo,
+            repo_type="model",
+            revision=revision,
+            local_dir=local_dir,
+        )
+
+        print(f"Pulled https://huggingface.co/{repo_id} to {local_dir}")
+        return local_path
+
+    def save(self, game: str = "chess", version: str = "v2", file_name: str = "example",
+            parent_dir: str = "checkpoints", path: str = None, push_to_hf: bool = True,
+            repo_id: str = None):
         """Save weights + metadata for load()."""
         file_path = Path(path) if path else Path(f"{parent_dir}/{game}/{version}") / f"{file_name}.pt"
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,9 +170,19 @@ class PolicyValueNetwork(nn.Module, ABC):
 
         print(f"Network saved at {file_path}")
 
+        if push_to_hf:
+            PolicyValueNetwork.push_to_hub(
+                file_path=file_path,
+                game=game,
+                version=version,
+                file_name=file_name,
+                repo_id=repo_id,
+            )
+
     @staticmethod
-    def load(game: str = None, version: str = None, file_name: str=None, parent_dir: str = "checkpoints", path: str = None) -> "PolicyValueNetwork":
-        """Reconstruct network from checkpoint via config."""        
+    def load(game: str = None, version: str = None, file_name: str = None,
+            parent_dir: str = "checkpoints", path: str = None) -> "PolicyValueNetwork":
+        """Reconstruct network from checkpoint via config."""
         path       = path or f"{parent_dir}/{game}/{version}/{file_name}.pt"
         checkpoint = torch.load(path, weights_only=True, map_location="cpu")
         game       = checkpoint.get("game", game)
@@ -107,6 +191,23 @@ class PolicyValueNetwork(nn.Module, ABC):
         network.load_state_dict(checkpoint["state_dict"])
 
         return network
+
+    @staticmethod
+    def load_from_hub(
+        repo_id:    str,
+        path:       str = None,
+        game:       str = None,
+        version:    str = None,
+        file_name:  str = None,
+        local_dir:  str = None,
+        revision:   str = None,
+    ) -> "PolicyValueNetwork":
+        """Pull a checkpoint from HF Hub and reconstruct the network."""
+        local_path = PolicyValueNetwork.pull_from_hub(
+            repo_id=repo_id, path=path, game=game, version=version,
+            file_name=file_name, local_dir=local_dir, revision=revision,
+        )
+        return PolicyValueNetwork.load(path=local_path)
 
     @staticmethod
     def create(game: str, version: str = "latest") -> "PolicyValueNetwork":
@@ -257,7 +358,3 @@ class NetworkFactory:
 
         return PolicyValueNetwork._registry[resolved]()
     
-
-if __name__ == "__main__": 
-    obj = NetworkFactory.create("chess")
-    print(type(obj).__name__)
