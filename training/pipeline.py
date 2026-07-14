@@ -56,6 +56,7 @@ class Pipeline:
                  eval_interval: int = 0,
                  eval_games: int = 4,
                  eval_threshold: float = 0.55,
+                 early_stopping: bool = True,
                  ):
         self.game             = game
         self.version          = version
@@ -66,6 +67,7 @@ class Pipeline:
         self.steps_per_iter   = steps_per_iter
         self.num_selfplay     = num_selfplay
         self.patience         = patience
+        self.early_stopping   = early_stopping
         self.verbose          = verbose
         self.kaggle           = kaggle
         self.push_to_hf       = push_to_hf
@@ -165,7 +167,9 @@ class Pipeline:
             iteration      = 0
             start_time     = time.time()
             last_save_time = start_time
+            last_push_time = start_time
             save_interval  = 600
+            push_interval  = 3600
             min_loss       = float('inf')
             not_improving  = 0
             loss = policy_loss = v_loss = 0.0
@@ -186,7 +190,7 @@ class Pipeline:
                     loss, policy_loss, v_loss = self.train_step()
 
                 min_loss, not_improving = self._update_early_stopping(loss, min_loss, not_improving)
-                if not_improving >= self.patience:
+                if self.early_stopping and not_improving >= self.patience:
                     break
 
                 current_time = time.time()
@@ -200,10 +204,13 @@ class Pipeline:
                     patience_str = f" | patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
                     print(f"iter {iteration} | loss: {loss:.4f} | policy: {policy_loss:.4f} | value: {v_loss:.4f} | {elapsed/60:.1f}m elapsed{remaining_str}{patience_str} | replay buffer: {len(self.replay_buffer)}")
 
-                # Save every 10 minutes
+                # Save locally every 10 min; push to HF at most hourly.
                 if current_time - last_save_time >= save_interval:
-                    self.save(parent_dir="kaggle" if self.kaggle else "checkpoints")
+                    push = current_time - last_push_time >= push_interval
+                    self.save(parent_dir="kaggle" if self.kaggle else "checkpoints", push_to_hf=push)
                     last_save_time = current_time
+                    if push:
+                        last_push_time = current_time
 
                 self._maybe_evaluate(iteration)
 
@@ -218,7 +225,7 @@ class Pipeline:
         s = int(elapsed % 60)
 
         parent_dir = "kaggle" if self.kaggle else "checkpoints"
-        self.save(parent_dir)
+        self.save(parent_dir, push_to_hf=True)
 
         print(f"\nTraining finished after {h}h {m}m {s}s! To play against the trained network, run:")
         print(f"  python3 -m arena.play --game {self.game} --version {self.version} --file_name {self.save_file_name}")
@@ -289,17 +296,27 @@ class Pipeline:
             net = self.network.module if isinstance(self.network, DDP) else self.network
             self.best_network = copy.deepcopy(net)
 
-    def save(self, parent_dir: str):
+    def save(self, parent_dir: str, push_to_hf: bool = False):
         file_name = self.save_file_name
         network = self.network.module if isinstance(self.network, DDP) else self.network
-        network.save(
-            self.game, self.version, file_name=file_name, parent_dir=parent_dir,
-            push_to_hf=self.push_to_hf, repo_id=self.hf_repo_id,
-        )
-        self.replay_buffer.save(
-            self.game, self.version, file_name=file_name, parent_dir=parent_dir,
-            push_to_hf=self.push_to_hf, repo_id=self.hf_repo_id,
-        )
+
+        # Local save
+        network.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir, push_to_hf=False)
+        self.replay_buffer.save(self.game, self.version, file_name=file_name, parent_dir=parent_dir, push_to_hf=False)
+
+        if push_to_hf and self.push_to_hf:
+            base = Path(f"{parent_dir}/{self.game}/{self.version}")
+            try:
+                PolicyValueNetwork.push_to_hub(
+                    file_path=base / f"{file_name}.pt", repo_id=self.hf_repo_id,
+                    game=self.game, version=self.version, file_name=file_name,
+                )
+                ReplayBuffer.push_to_hub(
+                    file_path=base / f"{file_name}_buffer.pt", repo_id=self.hf_repo_id,
+                    game=self.game, version=self.version, file_name=file_name,
+                )
+            except Exception as e:
+                print(f"[hf] push failed ({type(e).__name__}: {e}); continuing")
 
 
 def _resolve_network(cfg):
@@ -364,6 +381,7 @@ if __name__ == "__main__":
         hf_repo_id=cfg.hf.repo_id,
         eval_interval=20,
         eval_games=4,
+        early_stopping=False,
     )
 
     pipeline.train(
