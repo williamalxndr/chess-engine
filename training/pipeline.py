@@ -180,21 +180,25 @@ class Pipeline:
                 if self._should_stop(current_time, start_time, duration_seconds, iteration):
                     break
 
+                # Self-play
                 self.network.eval()
                 self.generate()
                 while len(self.replay_buffer) < self.train_batch_size:
                     self.generate()
 
+                # Optimize
                 self.network.train()
                 for _ in range(self.steps_per_iter):
                     loss, policy_loss, v_loss = self.train_step()
 
+                # Early stopping
                 min_loss, not_improving = self._update_early_stopping(loss, min_loss, not_improving)
                 if self.early_stopping and not_improving >= self.patience:
                     break
 
                 current_time = time.time()
 
+                # Logging
                 if self.kaggle and iteration % log_interval == 0:
                     elapsed = current_time - start_time
                     remaining_str = ""
@@ -204,15 +208,18 @@ class Pipeline:
                     patience_str = f" | patience: {not_improving}/{self.patience}" if not_improving > self.patience * 0.5 else ""
                     print(f"iter {iteration} | loss: {loss:.4f} | policy: {policy_loss:.4f} | value: {v_loss:.4f} | {elapsed/60:.1f}m elapsed{remaining_str}{patience_str} | replay buffer: {len(self.replay_buffer)}")
 
-                # Save locally every 10 min; push to HF at most hourly.
-                if current_time - last_save_time >= save_interval:
-                    push = current_time - last_push_time >= push_interval
+                # Gating: promote the current net if it beats the incumbent.
+                promoted = self.evaluate_and_promote(iteration)
+
+                # Checkpoint on promotion (never lose a net that just won its match)
+                # and on the timer (a killed session must not cost more than one
+                # interval). Rank 0 only, so DDP ranks do not race on the same path.
+                if self.is_main and (promoted or current_time - last_save_time >= save_interval):
+                    push = promoted or current_time - last_push_time >= push_interval
                     self.save(parent_dir="kaggle" if self.kaggle else "checkpoints", push_to_hf=push)
                     last_save_time = current_time
                     if push:
                         last_push_time = current_time
-
-                self._maybe_evaluate(iteration)
 
                 self._update_progress(progress, task, current_time, start_time, duration_seconds, loss, policy_loss, v_loss, not_improving)
                 self.trainer.scheduler.step()
@@ -225,7 +232,8 @@ class Pipeline:
         s = int(elapsed % 60)
 
         parent_dir = "kaggle" if self.kaggle else "checkpoints"
-        self.save(parent_dir, push_to_hf=True)
+        if self.is_main:
+            self.save(parent_dir, push_to_hf=True)
 
         print(f"\nTraining finished after {h}h {m}m {s}s! To play against the trained network, run:")
         print(f"  python3 -m arena.play --game {self.game} --version {self.version} --file_name {self.save_file_name}")
@@ -280,10 +288,13 @@ class Pipeline:
     def get_network(self):
         return copy.deepcopy(self.network)
 
-    def _maybe_evaluate(self, iteration):
+    def evaluate_and_promote(self, iteration) -> bool:
+        """Match the current net against the incumbent; True if it was promoted."""
+        # Off-cycle iterations, non-main ranks and eval_interval=0 never promote.
         if not (self.eval_interval and self.is_main and iteration > 0
                 and iteration % self.eval_interval == 0):
-            return
+            return False
+
         result = evaluate(
             self.network, self.best_network,
             game=self.game, num_rollout=self.num_rollout,
@@ -292,9 +303,12 @@ class Pipeline:
         )
         print(f"[eval] iter {iteration} | new {result.new_wins}-{result.old_wins}-{result.draws} old "
               f"| win_rate {result.win_rate:.2f} | promote={result.promote}")
+        # The promoted net becomes the incumbent the next match is scored against.
         if result.promote:
             net = self.network.module if isinstance(self.network, DDP) else self.network
             self.best_network = copy.deepcopy(net)
+
+        return result.promote
 
     def save(self, parent_dir: str, push_to_hf: bool = False):
         file_name = self.save_file_name
