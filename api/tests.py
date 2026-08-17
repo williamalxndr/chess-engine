@@ -158,6 +158,22 @@ class EvaluateRouteTest(unittest.TestCase):
         self.assertEqual(response.get_json()["message"], "illegal move 'e2e5'")
 
 
+class StaticFrontendTest(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_root_serves_the_frontend_shell(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"<title>Chess Engine</title>", response.data)
+
+    def test_frontend_assets_are_served_from_the_same_origin(self):
+        for path in ("/styles.css", "/src/app.js", "/src/api.js", "/src/chess.js"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 200)
+
+
 class ChessServiceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
