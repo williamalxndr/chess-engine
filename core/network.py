@@ -103,18 +103,27 @@ class PolicyValueNetwork(nn.Module, ABC):
         if path is None and any(v is None for v in [game, version, file_name]):
             raise ValueError("Either 'path' or all of 'game', 'version', 'file_name' must be provided.")
 
-        create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
-
-        api = HfApi()
         path_in_repo = path or f"{game}/{version}/{file_name}.pt"
 
-        api.upload_file(
-            path_or_fileobj=str(file_path),
-            path_in_repo=path_in_repo,
-            repo_id=repo_id,
-            repo_type="model",
-        )
+        # The Hub is a side channel. Callers write the file locally before
+        # pushing, so a transient upload failure must not end a training run
+        # that still has hours left — the next checkpoint retries.
+        try:
+            create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
+
+            HfApi().upload_file(
+                path_or_fileobj=str(file_path),
+                path_in_repo=path_in_repo,
+                repo_id=repo_id,
+                repo_type="model",
+            )
+        except Exception as error:
+            print(f"Push to {repo_id}/{path_in_repo} failed "
+                  f"({type(error).__name__}: {error}); kept the local copy")
+            return False
+
         print(f"Pushed to https://huggingface.co/{repo_id}")
+        return True
 
     @staticmethod
     def pull_from_hub(
