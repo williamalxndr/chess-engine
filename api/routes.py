@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from api.schemas import SuccessResponse, ErrorResponse, MoveRequest, MoveResponse
-from api.registry import GAME_REGISTRY
+from api.registry import get_service
 from api.config import LISTED_GAMES
 
 from marshmallow import ValidationError
@@ -23,8 +23,8 @@ def move(game):
     move_response_schema = MoveResponse()
     
     try:
-        game_service = GAME_REGISTRY[game]
-    except KeyError as err:
+        game_service = get_service(game)
+    except KeyError:
         return jsonify(
             error_schema.dump(
                 {
