@@ -25,6 +25,21 @@ class GameService(ABC):
         """
         return NotImplemented
 
+    @abstractmethod
+    def evaluate_position(self, fen=None, moves=None):
+        """
+        Score a position without playing it. Analysis takes no side: the value
+        is absolute, on the same axis as `result`.
+
+        ## Args:
+            fen(str): position to score, or None for the starting position
+            moves(list[str]): UCI moves to play from `fen` before searching
+
+        ## Returns:
+            dict of value(float), fen(str), lines(list), game_over(bool), result(int)
+        """
+        return NotImplemented
+
 
 class ChessService(GameService):
     def __init__(
@@ -98,6 +113,75 @@ class ChessService(GameService):
             "fen": board.fen(),
             "game_over": self.check_terminal(board),
             "result": self.rules.get_result(board),
+        }
+
+    @staticmethod
+    def absolute_value(node):
+        """
+        Node values are stored from the parent's point of view (see Node.update),
+        so flipping by the side to move puts every node on the same axis as
+        `result`: negative favours White, positive favours Black. Analysis takes
+        no side, so this is the form the API reports.
+        """
+        return float(-node.turn * node.q())
+
+    def principal_variation(self, child, length):
+        """
+        Follow the most-visited child down the tree, decoding each edge against
+        the position its parent held.
+        """
+        pv = []
+        node = child
+
+        while len(pv) < length:
+            pv.append(int_to_move(node.action, node.parent.state).uci())
+
+            visited = [c for c in node.children.values() if c._visit_count > 0]
+            if not visited:
+                break
+            node = max(visited, key=lambda c: c._visit_count)
+
+        return pv
+
+    def evaluate_position(self, fen=None, moves=None):
+        board = self.build_board(fen, moves)
+
+        if self.check_terminal(board):
+            result = self.rules.get_result(board)
+            return {
+                "value": float(result),
+                "fen": board.fen(),
+                "lines": [],
+                "game_over": True,
+                "result": result,
+            }
+
+        with self._lock:
+            self.bot.reset(board.copy())
+            self.bot.search()
+
+            root = self.bot.root
+            value = self.absolute_value(root)
+
+            candidates = [c for c in root.children.values() if c._visit_count > 0]
+            candidates.sort(key=lambda c: c._visit_count, reverse=True)
+
+            lines = [
+                {
+                    "move": int_to_move(child.action, root.state).uci(),
+                    "value": self.absolute_value(child),
+                    "visits": child._visit_count,
+                    "pv": self.principal_variation(child, config.EVAL_PV_LENGTH),
+                }
+                for child in candidates[: config.EVAL_TOP_K]
+            ]
+
+        return {
+            "value": value,
+            "fen": board.fen(),
+            "lines": lines,
+            "game_over": False,
+            "result": None,
         }
 
 

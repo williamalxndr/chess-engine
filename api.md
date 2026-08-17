@@ -12,6 +12,9 @@ Base URL: `/api`
 
 - Position: [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string.
 - Move: [UCI](https://www.chessprogramming.org/Algebraic_Chess_Notation#UCI) string, e.g. `e2e4`, `e7e8q`.
+- Score: float on the same axis as the table above, so `-1.0` is winning for
+  White and `1.0` is winning for Black. Scores are absolute, never relative to
+  the side to move — analysis takes no side.
 
 ## POST /api/games/{game}/move
 
@@ -61,7 +64,58 @@ Example:
 | `game_over` | bool | `true` if the game has ended. |
 | `result` | int \| null | `-1` (White), `1` (Black), `0` (draw), or `null` if ongoing. |
 
+## POST /api/games/{game}/evaluate
+
+Scores a position without playing it, and returns the search's best root moves.
+Works for any position and either side to move.
+
+**Path parameters** and **request body** are the same as `/move`.
+
+**Response** `200 OK`
+
+Example:
+```json
+{
+  "status": 200,
+  "data": {
+    "value": -0.31,
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "lines": [
+      {
+        "move": "b1c3",
+        "value": -0.28,
+        "visits": 45,
+        "pv": ["b1c3", "a7a5", "a2a4"]
+      }
+    ],
+    "game_over": false,
+    "result": null
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `value` | float | Score for the position; negative favours White. Equals `result` when the position is terminal. |
+| `fen` | string | The position that was scored. |
+| `lines` | object[] | Best root moves, most-visited first. Empty when the position is terminal. |
+| `game_over` | bool | `true` if the game has ended. |
+| `result` | int \| null | `-1` (White), `1` (Black), `0` (draw), or `null` if ongoing. |
+
+Each entry in `lines`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `move` | string | Root move in UCI. |
+| `value` | float | Score after this move, on the same axis as `value`. |
+| `visits` | int | Search visits behind the move. |
+| `pv` | string[] | UCI moves along the most-visited path, starting with `move`. |
+
+Line count and depth are capped by `EVAL_TOP_K` and `EVAL_PV_LENGTH` in `api/config.py`.
+
 **Errors** `400 Bad Request`
+
+Both endpoints report errors the same way:
 
 ```json
 { "status": 400, "message": "unrecognized game, currently listed games are ['chess']" }

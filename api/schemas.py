@@ -20,3 +20,17 @@ class MoveResponse(Schema):
     fen = fields.String(required=True)      # position after the bot's move
     game_over = fields.Bool(required=True)
     result = fields.Integer(dump_default=None, allow_none=True)
+
+
+class EvaluateLine(Schema):
+    move = fields.String(required=True)     # UCI of the root move this line starts with
+    value = fields.Float(required=True)     # same axis as `result`
+    visits = fields.Integer(required=True)  # search visits behind the line
+    pv = fields.List(fields.String())       # UCI moves, most-visited path from `move`
+
+class EvaluateResponse(Schema):
+    value = fields.Float(required=True)     # negative favours White, positive favours Black
+    fen = fields.String(required=True)      # position that was scored
+    lines = fields.List(fields.Nested(EvaluateLine))
+    game_over = fields.Bool(required=True)
+    result = fields.Integer(dump_default=None, allow_none=True)
