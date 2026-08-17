@@ -79,6 +79,13 @@ class NetworkMCTSPlayer(Player):
         self.mcts = NetworkMCTS(game=game, num_rollout=num_rollout, network=network, epsilon=0)
         self.is_bot = True
 
+        # Match play is inference only. In training mode BatchNorm would
+        # normalise each MCTS batch by its own statistics, so a result would
+        # depend on how leaves happened to be batched rather than on which
+        # network is stronger, and every forward pass would keep mutating the
+        # running stats of the network being judged.
+        self.mcts.network.eval()
+
     def reset(self):
         self.mcts.reset()
 
