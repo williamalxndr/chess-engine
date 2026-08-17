@@ -62,6 +62,12 @@ class ChessService(GameService):
             add_noise=False,
             verbose=False,
         )
+        # Serving is inference only. In training mode BatchNorm would normalise
+        # each MCTS batch by its own statistics — so a position's score would
+        # depend on which other leaves it was batched with — and keep mutating
+        # the checkpoint's running stats. The value head's dropout would stay on.
+        self.bot.network.eval()
+
         # One search tree is shared by every request, so searches must not overlap.
         self._lock = threading.Lock()
 

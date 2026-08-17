@@ -181,6 +181,12 @@ class ChessServiceTest(unittest.TestCase):
         # so these tests do not depend on gitignored weights.
         cls.service = ChessService(file_name=None, num_rollout=8)
 
+    def test_network_is_served_in_eval_mode(self):
+        # Training mode would let BatchNorm normalise each MCTS batch by its own
+        # statistics, so a position's score would depend on the other leaves it
+        # happened to be batched with.
+        self.assertFalse(self.service.bot.network.training)
+
     def test_build_board_defaults_to_start_position(self):
         board = self.service.build_board()
 
