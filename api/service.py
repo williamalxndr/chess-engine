@@ -1,60 +1,109 @@
-from api import config
-from game.env import TicTacToe
-from core.network import *
-from core.tree import *
+import threading
 from abc import ABC, abstractmethod
 
-import numpy as np
+import chess
+
+from api import config
+from core.encoder import int_to_move
+from core.tree import NetworkMCTS
+from game.rules import Rules
+
 
 class GameService(ABC):
     def __init__(self):
         pass
-    
+
     @abstractmethod
-    def get_bot_move(self, board):
+    def get_bot_move(self, fen=None, moves=None):
         """
         ## Args:
-            board(list)
+            fen(str): position to move in, or None for the starting position
+            moves(list[str]): UCI moves to play from `fen` before searching
 
         ## Returns:
-            dict of move(int), game_over(int), result(int)
+            dict of move(str), fen(str), game_over(bool), result(int)
         """
         return NotImplemented
 
 
-class TicTacToeService(GameService):
-    def __init__(self, network_path=factory.DEFAULT_NETWORK_PATH, num_rollout=factory.NUM_ROLLOUT):
+class ChessService(GameService):
+    def __init__(
+        self,
+        version=config.CHECKPOINT_VERSION,
+        file_name=config.CHECKPOINT_FILE_NAME,
+        parent_dir=config.CHECKPOINT_PARENT_DIR,
+        num_rollout=config.NUM_ROLLOUT,
+    ):
         super().__init__()
-        self.network = PolicyValueNetwork.load(network_path)
-        self.bot = NetworkMCTS(self.network, num_rollout=num_rollout, seed=factory.SEED)
+        self.rules = Rules.get("chess")
+        self.bot = NetworkMCTS(
+            game="chess",
+            version=version,
+            file_name=file_name,
+            parent_dir=parent_dir,
+            num_rollout=num_rollout,
+            batch_size=config.MCTS_BATCH_SIZE,
+            seed=config.SEED,
+            add_noise=False,
+            verbose=False,
+        )
+        # One search tree is shared by every request, so searches must not overlap.
+        self._lock = threading.Lock()
+
+    def build_board(self, fen=None, moves=None):
+        """
+        Rebuild the position the way UCI does: start from `fen`, then replay
+        `moves`. Replaying keeps the move stack, which the rules need for
+        threefold-repetition draws.
+
+        Raises:
+            ValueError: if the FEN or any move is invalid or illegal.
+        """
+        board = chess.Board() if fen is None else chess.Board(fen)
+
+        for uci in moves or []:
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                raise ValueError(f"illegal move '{uci}' in position '{board.fen()}'")
+            board.push(move)
+
+        return board
 
     def check_terminal(self, board):
-        return TicTacToe.is_terminal(board)
+        return self.rules.is_terminal(board)
 
-    def get_bot_move(self, board):
-        board = np.array(board)
-    
+    def get_bot_move(self, fen=None, moves=None):
+        board = self.build_board(fen, moves)
+
         if self.check_terminal(board):
-            move = None
-            game_over = True
-            result = TicTacToe.get_result(board)
-        else:
-            self.bot.reset(board)
-            move = self.bot.search()
-            game_over, result = self.bot.advance(move)
-        
-        return {
-            "move": move,
-            "game_over": game_over, 
-            "result": result
+            return {
+                "move": None,
+                "fen": board.fen(),
+                "game_over": True,
+                "result": self.rules.get_result(board),
             }
+
+        with self._lock:
+            self.bot.reset(board.copy())
+            action = self.bot.search()
+
+        if action not in self.rules.get_legal_actions(board):
+            raise RuntimeError(f"search returned illegal action {action}")
+
+        move = int_to_move(action, board)
+        board.push(move)
+
+        return {
+            "move": move.uci(),
+            "fen": board.fen(),
+            "game_over": self.check_terminal(board),
+            "result": self.rules.get_result(board),
+        }
+
 
 class GameServiceFactory:
     @staticmethod
     def make(game: str) -> GameService:
-        if game.lower() == "tictactoe":
-            return TicTacToeService()
-
-
-
-
+        if game.lower() == "chess":
+            return ChessService()
+        raise ValueError(f"unlisted game '{game}'")

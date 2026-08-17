@@ -6,28 +6,37 @@ Base URL: `/api`
 
 | Value | Meaning |
 |-------|---------|
-| `-1`  | X (moves first) |
-| `1`   | O |
-| `0`   | empty |
+| `-1`  | White (moves first) |
+| `1`   | Black |
+| `0`   | Draw |
 
-- Board: `3x3` integer array, `board[row][col]`.
-- Action: flat index `0-8`, `index = row * 3 + col`.
+- Position: [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string.
+- Move: [UCI](https://www.chessprogramming.org/Algebraic_Chess_Notation#UCI) string, e.g. `e2e4`, `e7e8q`.
 
 ## POST /api/games/{game}/move
 
-Returns the bot's move for the given board. If the board is already terminal, no move is made.
+Returns the bot's move for the given position. If the position is already terminal, no move is made.
+
+The API is stateless: send the position on every request. A position is built the
+same way UCI does it — start from `fen`, then replay `moves`. Sending the move
+history matters for threefold-repetition draws, which a bare FEN cannot express.
 
 **Path parameters**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `game` | string | Game id, e.g. `tictactoe`. |
+| `game` | string | Game id; only `chess` is served. |
 
 **Request body**
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `fen` | string \| null | Starting position. Omit or `null` for the initial position. |
+| `moves` | string[] | UCI moves replayed from `fen`. Defaults to `[]`. |
+
 Example:
 ```json
-{ "board": [[-1, 1, 0], [0, -1, 0], [0, 0, 1]] }
+{ "fen": null, "moves": ["e2e4", "e7e5"] }
 ```
 
 **Response** `200 OK`
@@ -36,23 +45,31 @@ Example:
 ```json
 {
   "status": 200,
-  "data": { "move": 6, "game_over": false, "result": null }
+  "data": {
+    "move": "g1f3",
+    "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+    "game_over": false,
+    "result": null
+  }
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `move` | int \| null | Bot's action `0-8`; `null` if the board was already terminal. |
+| `move` | string \| null | Bot's move in UCI; `null` if the position was already terminal. |
+| `fen` | string | Position after the bot's move. |
 | `game_over` | bool | `true` if the game has ended. |
-| `result` | int \| null | `-1` (X), `1` (O), `0` (draw), or `null` if ongoing. |
+| `result` | int \| null | `-1` (White), `1` (Black), `0` (draw), or `null` if ongoing. |
 
 **Errors** `400 Bad Request`
 
 ```json
-{ "status": 400, "message": "unrecognized game, currently listed games are ['tictactoe']" }
+{ "status": 400, "message": "unrecognized game, currently listed games are ['chess']" }
 ```
 
 | Cause | `message` |
 |-------|-----------|
 | Unknown game | `unrecognized game, ...` |
-| Invalid board | marshmallow validation errors (object) |
+| Unparsable FEN | python-chess parse error, e.g. `expected 'w' or 'b' for turn part of fen: ...` |
+| Illegal entry in `moves` | `illegal move 'e2e5' in position '...'` |
+| Wrong field types | marshmallow validation errors (object) |

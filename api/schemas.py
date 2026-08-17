@@ -12,9 +12,11 @@ class ErrorResponse(Schema):
 
 
 class MoveRequest(Schema):
-    board = fields.List(fields.List(fields.Integer()), required=True)
+    fen = fields.String(load_default=None, allow_none=True)   # None starts from the initial position
+    moves = fields.List(fields.String(), load_default=list)   # UCI moves replayed from `fen`
 
 class MoveResponse(Schema):
-    move = fields.Integer(allow_none=True)   # None if the board is already have a winner
+    move = fields.String(allow_none=True)   # UCI, None if the position was already terminal
+    fen = fields.String(required=True)      # position after the bot's move
     game_over = fields.Bool(required=True)
     result = fields.Integer(dump_default=None, allow_none=True)

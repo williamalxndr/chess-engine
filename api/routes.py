@@ -11,7 +11,8 @@ api_bp = Blueprint('main', __name__)
 def move(game):
     """
     Returns {
-        "move": int,
+        "move": str,
+        "fen": str,
         "game_over": bool,
         "result": int,
     }
@@ -33,7 +34,7 @@ def move(game):
         ), 400
 
     try:
-        payload = request.get_json()
+        payload = request.get_json(silent=True) or {}
         move_data = move_request_schema.load(payload)
     except ValidationError as err:
         return jsonify(
@@ -43,9 +44,21 @@ def move(game):
                 }
             )
         ), 400
-    
-    board = move_data["board"]
-    bot_result = game_service.get_bot_move(board)
+
+    try:
+        bot_result = game_service.get_bot_move(
+            fen=move_data["fen"], moves=move_data["moves"]
+        )
+    except ValueError as err:
+        # Unparsable FEN or an illegal move in `moves`.
+        return jsonify(
+            error_schema.dump(
+                {
+                    "message": str(err)
+                }
+            )
+        ), 400
+
     move_payload = move_response_schema.dump(bot_result)
 
     response_body = {
