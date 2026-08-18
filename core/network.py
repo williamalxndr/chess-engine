@@ -13,13 +13,17 @@ from game.rules import Rules
 from core.encoder import Encoder
 
 class ValueHead(nn.Module):
-    def __init__(self, in_channels, p=0.3):
+    def __init__(self, in_channels, squares=64, conv_channels=4, hidden=256, p=0.0):
         super().__init__()
         self.net = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_channels, conv_channels, kernel_size=1),
+            nn.BatchNorm2d(conv_channels),
+            nn.ReLU(inplace=True),
             nn.Flatten(),
+            nn.Linear(conv_channels * squares, hidden),
+            nn.ReLU(inplace=True),
             nn.Dropout(p),
-            nn.Linear(in_channels, 1),
+            nn.Linear(hidden, 1),
             nn.Tanh(),
         )
 
@@ -59,8 +63,25 @@ class PolicyValueNetwork(nn.Module, ABC):
         )
 
         self.policy_head = PolicyHead(self.body_channels).to(self.device)
-        self.value_head = ValueHead(self.body_channels).to(self.device)
+        self.value_head = ValueHead(self.body_channels, squares=self._body_squares()).to(self.device)
         self.to(self.device)
+
+    def _body_squares(self) -> int:
+        """How many squares the body hands to the heads.
+
+        Probed instead of hardcoded: the chess body keeps 8x8, but a body built
+        from unpadded kernels shrinks the board on the way through.
+        """
+        was_training = self.body.training
+        self.body.eval()   # batch statistics are undefined for a single sample
+        try:
+            with torch.no_grad():
+                sample = self.encoder.encode(self.rules.base_state()).unsqueeze(0)
+                height, width = self.body(sample).shape[-2:]
+        finally:
+            self.body.train(was_training)
+
+        return int(height) * int(width)
 
     @abstractmethod
     def _build_body(self) -> nn.Sequential:
@@ -197,7 +218,33 @@ class PolicyValueNetwork(nn.Module, ABC):
         game       = checkpoint.get("game", game)
         version    = checkpoint.get("version", version)
         network    = NetworkFactory.create(game=game, version=version)
-        network.load_state_dict(checkpoint["state_dict"])
+
+        state = dict(checkpoint["state_dict"])
+        own   = network.state_dict()
+
+        # A checkpoint written against the old value head still carries a usable
+        # body and policy head, which are the expensive part. Drop just the value
+        # head and let it start fresh rather than refusing the whole file.
+        stale = [k for k in state
+                 if k.startswith("value_head.")
+                 and (k not in own or own[k].shape != state[k].shape)]
+        for key in stale:
+            del state[key]
+
+        result     = network.load_state_dict(state, strict=False)
+        missing    = [k for k in result.missing_keys if not k.startswith("value_head.")]
+        unexpected = [k for k in result.unexpected_keys if not k.startswith("value_head.")]
+
+        # Everything outside the value head must still match exactly.
+        if missing or unexpected:
+            raise RuntimeError(
+                f"{path} does not match {type(network).__name__}: "
+                f"missing {missing}, unexpected {unexpected}"
+            )
+
+        if stale:
+            print(f"{path}: value head reinitialised (checkpoint predates the current "
+                  f"value head); body and policy head loaded, values are untrained")
 
         return network
 
