@@ -204,9 +204,22 @@ function jump(index) {
 // read the other way round, so displayed scores are flipped.
 const displayScore = (value) => -value;
 
+// The network reports an expected outcome in [-1, 1], not material, so scaling
+// it straight onto a pawn axis would read +4 pawns for a near-equal opening.
+// Lc0's mapping is the usual fix: near-linear around equality, steep once the
+// position is decided, and it lands on the pawn numbers engines print.
+const PAWN_SCALE = 111.714640912;
+const PAWN_SLOPE = 1.5620688421;
+const MAX_PAWNS = 15;
+
+const toPawns = (value) => {
+  const pawns = (PAWN_SCALE * Math.tan(PAWN_SLOPE * displayScore(value))) / 100;
+  return Math.max(-MAX_PAWNS, Math.min(MAX_PAWNS, pawns));
+};
+
 const formatScore = (value) => {
-  const shown = displayScore(value);
-  return (shown >= 0 ? "+" : "") + shown.toFixed(2);
+  const pawns = toPawns(value);
+  return (pawns >= 0 ? "+" : "") + pawns.toFixed(2);
 };
 
 function statusText() {
