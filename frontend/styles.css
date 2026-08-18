@@ -200,6 +200,11 @@ a:hover {
   border: 1px solid #000;
 }
 
+/* Muted so a half-full bar reads as "no reading" rather than "equal". */
+.evalbar.unavailable {
+  opacity: 0.35;
+}
+
 .evalbar-black {
   position: absolute;
   left: 0;

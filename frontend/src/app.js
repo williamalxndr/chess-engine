@@ -24,6 +24,7 @@ const el = {
   history: document.getElementById("history"),
   engineLog: document.getElementById("engine-log"),
   evalLabel: document.getElementById("eval-label"),
+  evalBar: document.getElementById("eval-bar"),
   evalWhite: document.getElementById("eval-white"),
   evalBlack: document.getElementById("eval-black"),
   first: document.getElementById("first"),
@@ -375,17 +376,16 @@ function renderLines() {
 }
 
 function renderEvalBar() {
-  if (state.score === null) {
-    el.evalLabel.textContent = state.evaluating ? "…" : "—";
-    el.evalWhite.style.height = "50%";
-    el.evalBlack.style.height = "50%";
-    return;
-  }
-
-  const whitePct = ((displayScore(state.score) + 1) / 2) * 100;
-  el.evalLabel.textContent = formatScore(state.score);
-  el.evalWhite.style.height = `${whitePct}%`;
-  el.evalBlack.style.height = `${100 - whitePct}%`;
+  // The value head does not generalise yet: on held-out games it scores no
+  // better than answering "draw" to everything, so any number here would claim
+  // a precision the network has not earned. Held back until it does, rather
+  // than dressed up as a score. A half-full bar would read as "equal", which is
+  // itself a claim, so it is muted to read as "no reading".
+  el.evalLabel.textContent = "n/a";
+  el.evalWhite.style.height = "50%";
+  el.evalBlack.style.height = "50%";
+  el.evalBar.classList.add("unavailable");
+  el.evalBar.title = "Evaluation unavailable: the value head is still untrained";
 }
 
 function render() {
