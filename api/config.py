@@ -1,6 +1,9 @@
 LISTED_GAMES = ["chess"]
 
-# Checkpoint served by the API: <PARENT_DIR>/<game>/<VERSION>/<FILE_NAME>.pt
+# Checkpoint served by the API. CHECKPOINT_PATH names a file directly and wins
+# when set; otherwise the file is addressed as
+# <PARENT_DIR>/<game>/<VERSION>/<FILE_NAME>.pt
+CHECKPOINT_PATH = "pretrained-network/pretrained.pt"
 CHECKPOINT_VERSION = "V2"
 CHECKPOINT_FILE_NAME = "test"
 CHECKPOINT_PARENT_DIR = "checkpoints"

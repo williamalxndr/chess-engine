@@ -1,10 +1,14 @@
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
 import chess
+import torch
 
 from api.app import app
 from api.service import ChessService
+from core import factory
 
 START_FEN = chess.Board().fen()
 # White queens on f7/g7: black is checkmated, so the position is already terminal.
@@ -177,9 +181,20 @@ class StaticFrontendTest(unittest.TestCase):
 class ChessServiceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # file_name=None builds a fresh network instead of loading a checkpoint,
-        # so these tests do not depend on gitignored weights.
-        cls.service = ChessService(file_name=None, num_rollout=8)
+        # path=None and file_name=None build a fresh network instead of loading a
+        # checkpoint, so these tests do not depend on gitignored weights.
+        cls.service = ChessService(path=None, file_name=None, num_rollout=8)
+
+    def test_serves_the_checkpoint_named_by_path(self):
+        # The served file need not sit under <parent>/<game>/<version>/.
+        network = factory.build_network("chess")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "somewhere", "explicit.pt")
+            network.save(path=path, push_to_hf=False)
+            service = ChessService(path=path, num_rollout=4)
+
+        torch.testing.assert_close(service.bot.network.policy_head.conv.weight.cpu(),
+                                   network.policy_head.conv.weight.cpu())
 
     def test_network_is_served_in_eval_mode(self):
         # Training mode would let BatchNorm normalise each MCTS batch by its own

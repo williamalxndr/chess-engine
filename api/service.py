@@ -5,6 +5,7 @@ import chess
 
 from api import config
 from core.encoder import int_to_move
+from core.network import PolicyValueNetwork
 from core.tree import NetworkMCTS
 from game.rules import Rules
 
@@ -44,6 +45,7 @@ class GameService(ABC):
 class ChessService(GameService):
     def __init__(
         self,
+        path=config.CHECKPOINT_PATH,
         version=config.CHECKPOINT_VERSION,
         file_name=config.CHECKPOINT_FILE_NAME,
         parent_dir=config.CHECKPOINT_PARENT_DIR,
@@ -51,11 +53,18 @@ class ChessService(GameService):
     ):
         super().__init__()
         self.rules = Rules.get("chess")
+
+        # NetworkMCTS always forwards game and version to the loader, which
+        # refuses those alongside an explicit path, so load here and hand the
+        # built network over instead.
+        network = PolicyValueNetwork.load(path=path) if path else None
+
         self.bot = NetworkMCTS(
             game="chess",
             version=version,
-            file_name=file_name,
-            parent_dir=parent_dir,
+            file_name=None if network else file_name,
+            parent_dir=None if network else parent_dir,
+            network=network,
             num_rollout=num_rollout,
             batch_size=config.MCTS_BATCH_SIZE,
             seed=config.SEED,
